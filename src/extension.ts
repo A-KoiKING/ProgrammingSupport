@@ -20,6 +20,57 @@ export function activate(context: vscode.ExtensionContext) {
 	});
 
 	context.subscriptions.push(disposable);
+
+	// Webviewビューのプロバイダーを登録
+    const provider = new ProgrammingSupportViewProvider(context.extensionUri);
+
+    context.subscriptions.push(
+        vscode.window.registerWebviewViewProvider('programming-support-view', provider)
+    );
+}
+
+class ProgrammingSupportViewProvider implements vscode.WebviewViewProvider {
+    constructor(private readonly _extensionUri: vscode.Uri) {}
+
+    public resolveWebviewView(
+        webviewView: vscode.WebviewView,
+        context: vscode.WebviewViewResolveContext,
+        _token: vscode.CancellationToken,
+    ) {
+        webviewView.webview.options = {
+            enableScripts: true, // スクリプトを有効にする
+            localResourceRoots: [this._extensionUri]
+        };
+
+        webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
+    }
+
+    private _getHtmlForWebview(webview: vscode.Webview) {
+        return `
+            <!DOCTYPE html>
+            <html lang="ja">
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <style>
+                    body { font-family: sans-serif; padding: 10px; }
+                    button { width: 100%; padding: 5px; cursor: pointer; }
+                </style>
+                <title>Support</title>
+            </head>
+            <body>
+                <h3>Support Dashboard</h3>
+                <p>プログラミングをサポートします</p>
+                <button id="btn">Hello</button>
+                <script>
+                    const vscode = acquireVsCodeApi();
+                    document.getElementById('btn').addEventListener('click', () => {
+                        vscode.postMessage({ command: 'alert', text: 'Hello from Webview!' });
+                    });
+                </script>
+            </body>
+            </html>`;
+    }
 }
 
 // このメソッドは拡張機能がデアクティベートされたときに呼ばれます

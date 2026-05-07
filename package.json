@@ -12,6 +12,25 @@
   "activationEvents": [],
   "main": "./out/extension.js",
   "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "programming-support-explorer",
+          "title": "Programming Support",
+          "icon": "media/icon.svg" 
+        }
+      ]
+    },
+    "views": {
+      "programming-support-explorer": [
+        {
+          "id": "programming-support-view",
+          "name": "Support Dashboard",
+          "type": "webview",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
     "commands": [
       {
         "command": "programmingsupport.helloWorld",

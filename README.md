@@ -69,3 +69,11 @@ You can author your README using Visual Studio Code. Here are some useful editor
 * [Markdown Syntax Reference](https://help.github.com/articles/markdown-basics/)
 
 **Enjoy!**
+
+# Icon Image
+https://icooon-mono.com/11126-%e3%81%97%e3%81%8a%e3%82%8a%e4%bb%98%e3%81%8d%e3%81%ae%e6%9c%ac%e3%81%ae%e3%82%a2%e3%82%a4%e3%82%b3%e3%83%b3%e7%b4%a0%e6%9d%90/
+
+# How development
+```bash
+chmod +x node_modules/.bin/tsc
+```
