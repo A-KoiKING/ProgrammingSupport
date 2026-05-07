@@ -1,26 +1,26 @@
-// The module 'vscode' contains the VS Code extensibility API
-// Import the module and reference it with the alias vscode in your code below
+// モジュール 'vscode' には VS Code 拡張機能 API が含まれています
+// モジュールをインポートし、以下のコードで vscode というエイリアスで参照します
 import * as vscode from 'vscode';
 
-// This method is called when your extension is activated
-// Your extension is activated the very first time the command is executed
+// このメソッドは拡張機能がアクティベートされたときに呼ばれます
+// 拡張機能は初めてコマンドが実行されるときにアクティベートされます
 export function activate(context: vscode.ExtensionContext) {
 
-	// Use the console to output diagnostic information (console.log) and errors (console.error)
-	// This line of code will only be executed once when your extension is activated
+	// コンソールを使用して診断情報 (console.log) とエラー (console.error) を出力します
+	// このコード行は拡張機能がアクティベートされたときに 1 回だけ実行されます
 	console.log('Congratulations, your extension "programmingsupport" is now active!');
 
-	// The command has been defined in the package.json file
-	// Now provide the implementation of the command with registerCommand
-	// The commandId parameter must match the command field in package.json
+	// コマンドは package.json ファイルで定義されています
+	// 次に registerCommand でコマンドの実装を提供します
+	// commandId パラメーターは package.json の command フィールドと一致する必要があります
 	const disposable = vscode.commands.registerCommand('programmingsupport.helloWorld', () => {
-		// The code you place here will be executed every time your command is executed
-		// Display a message box to the user
+		// ここに配置したコードは、コマンドが実行されるたびに実行されます
+		// ユーザーにメッセージ ボックスを表示します
 		vscode.window.showInformationMessage('Hello World from ProgrammingSupport!');
 	});
 
 	context.subscriptions.push(disposable);
 }
 
-// This method is called when your extension is deactivated
+// このメソッドは拡張機能がデアクティベートされたときに呼ばれます
 export function deactivate() {}
