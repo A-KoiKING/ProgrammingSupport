@@ -1,0 +1,12 @@
+# 依存関係
+node_modules/
+
+# ビルド成果物
+out/
+dist/
+
+# テスト用の一時フォルダ
+.vscode-test/
+
+# ログファイル
+*.log
