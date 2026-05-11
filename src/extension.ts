@@ -43,6 +43,15 @@ class ProgrammingSupportViewProvider implements vscode.WebviewViewProvider {
         };
 
         webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
+
+        webviewView.webview.onDidReceiveMessage(data => {
+            switch (data.command) {
+                case 'alert':
+                    // Webviewから届いたテキストを、VS Codeの通知として表示する
+                    vscode.window.showInformationMessage(data.text);
+                    break;
+            }
+        });
     }
 
     private _getHtmlForWebview(webview: vscode.Webview) {
