@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { font-family: var(--vscode-font-family); padding: 10px; }
+        .label { color: var(--vscode-descriptionForeground); font-size: 0.8em; }
+        .value { font-weight: bold; margin-bottom: 10px; font-family: var(--vscode-editor-font-family); }
+    </style>
+</head>
+<body>
+    <h3>変数情報</h3>
+    <div class="label">名前:</div>
+    <div id="var-name" class="value">-</div>
+    <div class="label">位置:</div>
+    <div id="var-pos" class="value">-</div>
+
+    <script>
+        const varName = document.getElementById('var-name');
+        const varPos = document.getElementById('var-pos');
+
+        window.addEventListener('message', event => {
+            const message = event.data;
+            if (message.type === 'updateVariable') {
+                varName.textContent = message.name;
+                varPos.textContent = 'L' + message.line + ':C' + message.character;
+            }
+        });
+    </script>
+</body>
+</html>
