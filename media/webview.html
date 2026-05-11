@@ -2,28 +2,69 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
-        body { font-family: var(--vscode-font-family); padding: 10px; }
-        .label { color: var(--vscode-descriptionForeground); font-size: 0.8em; }
-        .value { font-weight: bold; margin-bottom: 10px; font-family: var(--vscode-editor-font-family); }
+        body {
+            font-family: var(--vscode-font-family);
+            color: var(--vscode-foreground);
+            padding: 15px;
+            line-height: 1.6;
+        }
+        .section {
+            margin-bottom: 20px;
+            border-bottom: 1px solid var(--vscode-panel-border);
+            padding-bottom: 10px;
+        }
+        .label {
+            color: var(--vscode-descriptionForeground);
+            font-size: 0.85em;
+            text-transform: uppercase;
+            margin-bottom: 4px;
+        }
+        .value {
+            font-weight: 600;
+            font-size: 1.1em;
+            word-break: break-all;
+        }
+        .type-tag {
+            font-family: var(--vscode-editor-font-family);
+            background-color: var(--vscode-textBlockQuote-background);
+            padding: 4px 8px;
+            border-radius: 4px;
+            display: inline-block;
+            margin-top: 5px;
+            color: var(--vscode-symbolIcon-variableForeground);
+        }
     </style>
 </head>
 <body>
-    <h3>変数情報</h3>
-    <div class="label">名前:</div>
-    <div id="var-name" class="value">-</div>
-    <div class="label">位置:</div>
-    <div id="var-pos" class="value">-</div>
+    <div class="section">
+        <div class="label">Variable Name</div>
+        <div id="var-name" class="value">-</div>
+    </div>
+
+    <div class="section">
+        <div class="label">Type / Definition</div>
+        <div id="var-type" class="type-tag">-</div>
+    </div>
+
+    <div class="section">
+        <div class="label">Position</div>
+        <div id="var-pos" class="value">-</div>
+    </div>
 
     <script>
         const varName = document.getElementById('var-name');
+        const varType = document.getElementById('var-type');
         const varPos = document.getElementById('var-pos');
 
+        // 拡張機能からのメッセージ待機
         window.addEventListener('message', event => {
             const message = event.data;
             if (message.type === 'updateVariable') {
                 varName.textContent = message.name;
-                varPos.textContent = 'L' + message.line + ':C' + message.character;
+                varType.textContent = message.typeInfo;
+                varPos.textContent = 'Line ' + message.line + ', Col ' + message.character;
             }
         });
     </script>
