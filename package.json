@@ -17,7 +17,7 @@
         {
           "id": "programming-support-explorer",
           "title": "Programming Support",
-          "icon": "media/icon.svg" 
+          "icon": "media/icon.svg"
         }
       ]
     },
@@ -30,13 +30,7 @@
           "icon": "media/icon.svg"
         }
       ]
-    },
-    "commands": [
-      {
-        "command": "programmingsupport.helloWorld",
-        "title": "Hello World"
-      }
-    ]
+    }
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
