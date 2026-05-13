@@ -38,12 +38,16 @@ class ProgrammingSupportViewProvider implements vscode.WebviewViewProvider {
         }
 
         const position = editor.selection.active;
+        const lineText = editor.document.lineAt(position.line).text;
         const range = editor.document.getWordRangeAtPosition(position);
 
         let word = 'なし';
         let typeInfo = '情報なし';
 
-        if (range) {
+        if (this._isComment(lineText, position.character)) {
+            word = editor.document.getText(range) || 'コメント内';
+            typeInfo = 'コメント';
+        } else if (range) {
             word = editor.document.getText(range);
 
             const hoverData = await vscode.commands.executeCommand<vscode.Hover[]>(
@@ -71,6 +75,20 @@ class ProgrammingSupportViewProvider implements vscode.WebviewViewProvider {
             line: position.line + 1,
             character: position.character + 1
         });
+    }
+
+    private _isComment(lineText: string, character: number): boolean {
+        const trimmed = lineText.trim();
+        // 行全体がコメント記号で始まる場合
+        if (trimmed.startsWith('//') || trimmed.startsWith('/*') || trimmed.startsWith('*')) {
+            return true;
+        }
+        // カーソル位置より前に // がある場合
+        const inlineCommentIdx = lineText.indexOf('//');
+        if (inlineCommentIdx !== -1 && character >= inlineCommentIdx) {
+            return true;
+        }
+        return false;
     }
 
     private _parseTypeInfo(contents: string, word: string): string | undefined {
