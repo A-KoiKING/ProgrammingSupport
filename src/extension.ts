@@ -44,7 +44,9 @@ class ProgrammingSupportViewProvider implements vscode.WebviewViewProvider {
      * カーソル位置の単語とその型情報を取得してWebviewに送信
      */
     public async updateVariableInfo(editor: vscode.TextEditor) {
-        if (!this._view) return;
+        if (!this._view) {
+            return;
+        }
 
         const position = editor.selection.active;
         const range = editor.document.getWordRangeAtPosition(position);
@@ -63,7 +65,9 @@ class ProgrammingSupportViewProvider implements vscode.WebviewViewProvider {
 
             if (hoverData && hoverData.length > 0) {
                 const contents = hoverData[0].contents.map(c => {
-                    if (typeof c === 'string') return c;
+                    if (typeof c === 'string') {
+                        return c;
+                    }
                     return (c as vscode.MarkdownString).value;
                 }).join('\n');
 
@@ -78,36 +82,27 @@ class ProgrammingSupportViewProvider implements vscode.WebviewViewProvider {
         });
     }
 
-    private _parseTypeInfo(contents: string, word: string): string | undefined {
-        const normalized = contents.replace(/\r\n/g, '\n');
-        const cleanContents = normalized.replace(/```[\s\S]*?```/g, match => match.replace(/\n/g, '\n'));
+private _parseTypeInfo(contents: string, word: string): string | undefined {
+    const normalized = contents.replace(/\r\n/g, '\n').trim();
 
-        const directiveMatch = cleanContents.match(/(?:type|Type|型)\s*[:=]\s*([A-Za-z_][A-Za-z0-9_\s\*:&<>,\[\]]*)/);
-        if (directiveMatch) {
-            return directiveMatch[1].trim();
-        }
+    const codeBlockMatch = normalized.match(/```(?:[^\n]*)\n([\s\S]*?)```/);
+    let targetText = codeBlockMatch ? codeBlockMatch[1].trim() : normalized;
 
-        const codeBlockMatch = normalized.match(/```(?:[^\n]*)\n([\s\S]*?)```/);
-        const haystack = codeBlockMatch ? codeBlockMatch[1] : normalized;
-
-        const escapedWord = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const typePattern = new RegExp(
-            `(?:^|[\n\r])\s*([A-Za-z_][A-Za-z0-9_\s:\*<&>,\[\]]*?)\s+${escapedWord}\b`,
-            'i'
-        );
-        const match = haystack.match(typePattern);
-        if (match) {
-            return match[1].trim();
-        }
-
-        const simpleTypeMatch = cleanContents.match(/(?:^|[\n\r])\s*(unsigned\s+)?(long\s+long|long|short|int|char|float|double|bool|void|auto|size_t|ssize_t)\b/i);
-        if (simpleTypeMatch) {
-            return simpleTypeMatch[0].trim();
-        }
-
-        const firstLine = normalized.split(/[\n\r]/)[0].trim();
-        return firstLine || undefined;
+    const castMatch = targetText.match(/^\(([^)]+)\)/);
+    if (castMatch) {
+        return castMatch[1].trim();
     }
+
+    const escapedWord = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const typePattern = new RegExp(`^([\\s\\S]*?)\\s+${escapedWord}\\b`, 'i');
+    const wordInCode = targetText.match(typePattern);
+    if (wordInCode) {
+        return wordInCode[1].trim();
+    }
+
+    const firstLine = targetText.split('\n')[0].replace(/[`#*]/g, '').trim();
+    return firstLine || undefined;
+}
 
     private _getHtmlForWebview(webview: vscode.Webview): string {
         const nonce = this._getNonce();
