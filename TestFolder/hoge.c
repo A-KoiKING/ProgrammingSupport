@@ -8,5 +8,9 @@ int main() {
     printf("%s\n", message);
     printf("Welcome to C programming!\n");
 
+    /*
+        printf("This Line is not executed.\n");
+    */
+
     return 0;
 }

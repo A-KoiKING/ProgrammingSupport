@@ -44,8 +44,8 @@ class ProgrammingSupportViewProvider implements vscode.WebviewViewProvider {
         let word = 'なし';
         let typeInfo = '情報なし';
 
-        if (this._isComment(lineText, position.character)) {
-            word = editor.document.getText(range) || 'コメント内';
+        if (this._isComment(lineText, position.character, editor.document, position)) {
+            word = (range ? editor.document.getText(range) : '') || 'コメント内';
             typeInfo = 'コメント';
         } else if (range) {
             word = editor.document.getText(range);
@@ -77,7 +77,7 @@ class ProgrammingSupportViewProvider implements vscode.WebviewViewProvider {
         });
     }
 
-    private _isComment(lineText: string, character: number): boolean {
+    private _isComment(lineText: string, character: number, document: vscode.TextDocument, position: vscode.Position): boolean {
         const trimmed = lineText.trim();
         // 行全体がコメント記号で始まる場合
         if (trimmed.startsWith('//') || trimmed.startsWith('/*') || trimmed.startsWith('*')) {
@@ -88,8 +88,29 @@ class ProgrammingSupportViewProvider implements vscode.WebviewViewProvider {
         if (inlineCommentIdx !== -1 && character >= inlineCommentIdx) {
             return true;
         }
+        if (this._isInsideBlockComment(document, position)) {
+            return true;
+        }
         return false;
     }
+
+private _isInsideBlockComment(document: vscode.TextDocument, position: vscode.Position): boolean {
+    let inBlock = false;
+    for (let i = 0; i <= position.line; i++) {
+        const line = document.lineAt(i).text;
+        const checkTo = i === position.line ? position.character : line.length;
+        for (let j = 0; j < checkTo - 1; j++) {
+            if (!inBlock && line[j] === '/' && line[j + 1] === '*') {
+                inBlock = true;
+                j++;
+            } else if (inBlock && line[j] === '*' && line[j + 1] === '/') {
+                inBlock = false;
+                j++;
+            }
+        }
+    }
+    return inBlock;
+}
 
     private _parseTypeInfo(contents: string, word: string): string | undefined {
         const normalized = contents.replace(/\r\n/g, '\n').trim();

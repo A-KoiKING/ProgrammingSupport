@@ -7,6 +7,7 @@ dist/
 
 # テスト用の一時フォルダ
 .vscode-test/
+TestFolder/hoge
 
 # ログファイル
 *.log
