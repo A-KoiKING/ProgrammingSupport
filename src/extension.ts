@@ -94,23 +94,23 @@ class ProgrammingSupportViewProvider implements vscode.WebviewViewProvider {
         return false;
     }
 
-private _isInsideBlockComment(document: vscode.TextDocument, position: vscode.Position): boolean {
-    let inBlock = false;
-    for (let i = 0; i <= position.line; i++) {
-        const line = document.lineAt(i).text;
-        const checkTo = i === position.line ? position.character : line.length;
-        for (let j = 0; j < checkTo - 1; j++) {
-            if (!inBlock && line[j] === '/' && line[j + 1] === '*') {
-                inBlock = true;
-                j++;
-            } else if (inBlock && line[j] === '*' && line[j + 1] === '/') {
-                inBlock = false;
-                j++;
+    private _isInsideBlockComment(document: vscode.TextDocument, position: vscode.Position): boolean {
+        let inBlock = false;
+        for (let i = 0; i <= position.line; i++) {
+            const line = document.lineAt(i).text;
+            const checkTo = i === position.line ? position.character : line.length;
+            for (let j = 0; j < checkTo - 1; j++) {
+                if (!inBlock && line[j] === '/' && line[j + 1] === '*') {
+                    inBlock = true;
+                    j++;
+                } else if (inBlock && line[j] === '*' && line[j + 1] === '/') {
+                    inBlock = false;
+                    j++;
+                }
             }
         }
+        return inBlock;
     }
-    return inBlock;
-}
 
     private _parseTypeInfo(contents: string, word: string): string | undefined {
         const normalized = contents.replace(/\r\n/g, '\n').trim();

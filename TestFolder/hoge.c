@@ -1,6 +1,7 @@
 #include <stdio.h>
 
-int main() {
+int main()
+{
     // 表示するメッセージを変数に格納
     char message[] = "Hello, World!";
 
