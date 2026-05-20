@@ -6,7 +6,7 @@ int main()
     char message[] = "Hello, World!";
 
     // メッセージと数値を表示
-    printf("%s\n", message);
+    printf("%s\n", message);    //char配列を表示
     printf("Welcome to C programming!\n");
 
     /*
