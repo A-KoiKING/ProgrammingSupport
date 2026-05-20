@@ -45,7 +45,13 @@ class ProgrammingSupportViewProvider implements vscode.WebviewViewProvider {
         let typeInfo = '情報なし';
 
         if (this._isComment(lineText, position.character, editor.document, position)) {
-            word = (range ? editor.document.getText(range) : '') || 'コメント内';
+            const trimmed = lineText.trim();
+            const cleaned = trimmed
+                .replace(/^\/\/\s*/, '')
+                .replace(/^\/\*\s*/, '')
+                .replace(/^\*\s*/, '')
+                .replace(/\s*\*\/$/, '');
+            word = cleaned.trim() || 'コメント内';
             typeInfo = 'コメント';
         } else if (range) {
             word = editor.document.getText(range);
