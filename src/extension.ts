@@ -2,6 +2,14 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 
+interface WordDefinition {
+    description?: string;
+    example?: string;
+    notes?: string;
+    warning?: string;
+    category?: string;
+}
+
 export function activate(context: vscode.ExtensionContext) {
     const provider = new ProgrammingSupportViewProvider(context.extensionUri);
 
@@ -20,8 +28,32 @@ export function activate(context: vscode.ExtensionContext) {
 
 class ProgrammingSupportViewProvider implements vscode.WebviewViewProvider {
     private _view?: vscode.WebviewView;
+    private _definitions: Record<string, WordDefinition> = {};
 
-    constructor(private readonly _extensionUri: vscode.Uri) { }
+    constructor(private readonly _extensionUri: vscode.Uri) {
+        this._loadDefinitions();
+    }
+
+    private _loadDefinitions(): void {
+        const jsonPath = path.join(this._extensionUri.fsPath, 'keywords', 'c.json');
+
+        // ← まずここをVSCodeの出力パネルで確認
+        console.log('[ProgrammingSupport] c.json path:', jsonPath);
+        console.log('[ProgrammingSupport] file exists:', fs.existsSync(jsonPath));
+
+        if (fs.existsSync(jsonPath)) {
+            try {
+                const raw = fs.readFileSync(jsonPath, 'utf8');
+                this._definitions = JSON.parse(raw);
+                console.log('[ProgrammingSupport] loaded keys:', Object.keys(this._definitions));
+            } catch (e) {
+                console.error('[ProgrammingSupport] JSON parse error:', e);
+                this._definitions = {};
+            }
+        } else {
+            console.warn('[ProgrammingSupport] c.json not found');
+        }
+    }
 
     public resolveWebviewView(webviewView: vscode.WebviewView) {
         this._view = webviewView;
@@ -43,6 +75,7 @@ class ProgrammingSupportViewProvider implements vscode.WebviewViewProvider {
 
         let word = 'なし';
         let typeInfo = '情報なし';
+        let definition: WordDefinition | null = null;
 
         if (this._isComment(lineText, position.character, editor.document, position)) {
             const trimmed = lineText.trim();
@@ -74,22 +107,31 @@ class ProgrammingSupportViewProvider implements vscode.WebviewViewProvider {
             }
         }
 
+        console.log('[ProgrammingSupport] cursor word:', JSON.stringify(word));
+        console.log('[ProgrammingSupport] definitions keys:', Object.keys(this._definitions));
+
+        if (this._definitions[word]) {
+            definition = this._definitions[word];
+            console.log('[ProgrammingSupport] definition found:', definition);
+        } else {
+            console.log('[ProgrammingSupport] no definition for word:', word);
+        }
+
         this._view.webview.postMessage({
             type: 'update',
             word,
             typeInfo,
             line: position.line + 1,
-            character: position.character + 1
+            character: position.character + 1,
+            definition
         });
     }
 
     private _isComment(lineText: string, character: number, document: vscode.TextDocument, position: vscode.Position): boolean {
         const trimmed = lineText.trim();
-        // 行全体がコメント記号で始まる場合
         if (trimmed.startsWith('//') || trimmed.startsWith('/*') || trimmed.startsWith('*')) {
             return true;
         }
-        // カーソル位置より前に // がある場合
         const inlineCommentIdx = lineText.indexOf('//');
         if (inlineCommentIdx !== -1 && character >= inlineCommentIdx) {
             return true;

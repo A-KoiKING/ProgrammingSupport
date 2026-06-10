@@ -1,0 +1,16 @@
+{
+    "int": {
+        "description": "整数型の変数",
+        "example": "int age = 20;",
+        "notes": "小数は切り捨てられます",
+        "warning": "小数は扱えません。少数にはfloatやdoubleを使用してください。",
+        "category": "データ型"
+    },
+    "float": {
+        "description": "単精度浮動小数点型の変数",
+        "example": "float pi = 3.14;",
+        "notes": "小数点以下6桁程度の精度があります",
+        "warning": "精度が必要な場合はdoubleを使用してください。",
+        "category": "データ型"
+    }
+}

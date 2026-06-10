@@ -23,6 +23,7 @@
             color: var(--vscode-descriptionForeground);
             font-size: 0.85em;
             text-transform: uppercase;
+            margin-bottom: 4px;
         }
 
         .value {
@@ -38,6 +39,48 @@
             display: inline-block;
             margin-top: 5px;
             color: var(--vscode-symbolIcon-variableForeground);
+        }
+
+        /* --- 定義情報セクション --- */
+        #definition-section {
+            display: none;
+        }
+
+        .def-row {
+            margin-bottom: 10px;
+        }
+
+        .def-example {
+            display: block;
+            background-color: var(--vscode-textBlockQuote-background);
+            border-left: 3px solid var(--vscode-textBlockQuote-border);
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-family: var(--vscode-editor-font-family, monospace);
+            font-size: 0.95em;
+            margin-top: 4px;
+            word-break: break-all;
+        }
+
+        .def-warning {
+            display: block;
+            background-color: var(--vscode-inputValidation-warningBackground, #452a00);
+            border-left: 3px solid var(--vscode-inputValidation-warningBorder, #f99);
+            color: var(--vscode-inputValidation-warningForeground, #f99);
+            padding: 6px 10px;
+            border-radius: 4px;
+            margin-top: 4px;
+            font-size: 0.9em;
+        }
+
+        .category-badge {
+            display: inline-block;
+            background-color: var(--vscode-badge-background);
+            color: var(--vscode-badge-foreground);
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 0.8em;
+            margin-top: 4px;
         }
     </style>
 </head>
@@ -56,6 +99,30 @@
         <div id="var-pos" class="value">-</div>
     </div>
 
+    <!-- JSON定義情報セクション -->
+    <div id="definition-section">
+        <div class="section def-row">
+            <div class="label">Category</div>
+            <span id="def-category" class="category-badge">-</span>
+        </div>
+        <div class="section def-row">
+            <div class="label">Description</div>
+            <div id="def-description" class="value"></div>
+        </div>
+        <div class="section def-row">
+            <div class="label">Example</div>
+            <code id="def-example" class="def-example"></code>
+        </div>
+        <div class="section def-row">
+            <div class="label">Notes</div>
+            <div id="def-notes"></div>
+        </div>
+        <div class="def-row">
+            <div class="label">Warning</div>
+            <span id="def-warning" class="def-warning"></span>
+        </div>
+    </div>
+
     <script nonce="{{nonce}}">
         const vscode = acquireVsCodeApi();
         window.addEventListener('message', event => {
@@ -64,6 +131,19 @@
                 document.getElementById('var-name').textContent = message.word;
                 document.getElementById('var-type').textContent = message.typeInfo;
                 document.getElementById('var-pos').textContent = `Line ${message.line}, Col ${message.character}`;
+
+                const defSection = document.getElementById('definition-section');
+                if (message.definition) {
+                    const d = message.definition;
+                    document.getElementById('def-category').textContent    = d.category    ?? '—';
+                    document.getElementById('def-description').textContent = d.description ?? '—';
+                    document.getElementById('def-example').textContent     = d.example     ?? '—';
+                    document.getElementById('def-notes').textContent       = d.notes       ?? '—';
+                    document.getElementById('def-warning').textContent     = d.warning     ?? '—';
+                    defSection.style.display = 'block';
+                } else {
+                    defSection.style.display = 'none';
+                }
             }
         });
     </script>
