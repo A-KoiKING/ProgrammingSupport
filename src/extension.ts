@@ -181,7 +181,6 @@ class ProgrammingSupportViewProvider implements vscode.WebviewViewProvider {
     }
 
     private _getHtmlForWebview(webview: vscode.Webview): string {
-        // mediaフォルダがプロジェクト直下にあることを想定
         const htmlPath = path.join(this._extensionUri.fsPath, 'media', 'webview.html');
 
         if (!fs.existsSync(htmlPath)) {
