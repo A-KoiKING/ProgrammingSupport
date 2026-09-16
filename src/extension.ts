@@ -30,6 +30,12 @@ class ProgrammingSupportViewProvider implements vscode.WebviewViewProvider {
     private _view?: vscode.WebviewView;
     private _definitions: Record<string, WordDefinition> = {};
 
+    // 型キーワード自体を選択したときに、そのままキーとして扱う基本型の一覧
+    private static readonly BASE_TYPE_KEYWORDS = new Set([
+        'char', 'int', 'float', 'double', 'long', 'short',
+        'unsigned', 'signed', 'void', 'bool', '_Bool'
+    ]);
+
     constructor(private readonly _extensionUri: vscode.Uri) {
         this._loadDefinitions();
     }
@@ -89,21 +95,32 @@ class ProgrammingSupportViewProvider implements vscode.WebviewViewProvider {
         } else if (range) {
             word = editor.document.getText(range);
 
-            const hoverData = await vscode.commands.executeCommand<vscode.Hover[]>(
-                'vscode.executeHoverProvider',
-                editor.document.uri,
-                position
-            );
+            if (ProgrammingSupportViewProvider.BASE_TYPE_KEYWORDS.has(word)) {
+                // "char" や "int" などの型キーワード自体を選択した場合は、
+                // ホバー解析を経由せず単語そのものを型として扱う。
+                // （ホバー内容の解析結果が declaration 全体になったりして
+                // 　誤認識されるのを防ぐため）
+                // ただし同じ行が「型 変数名[...]」の配列宣言になっている場合は
+                // char[] のように配列であることが分かる形にする。
+                const arrayDeclPattern = new RegExp(`\\b${word}\\b\\s+\\w+\\s*\\[`);
+                typeInfo = arrayDeclPattern.test(lineText) ? `${word}[]` : word;
+            } else {
+                const hoverData = await vscode.commands.executeCommand<vscode.Hover[]>(
+                    'vscode.executeHoverProvider',
+                    editor.document.uri,
+                    position
+                );
 
-            if (hoverData && hoverData.length > 0) {
-                const contents = hoverData[0].contents.map(c => {
-                    if (typeof c === 'string') {
-                        return c;
-                    }
-                    return (c as vscode.MarkdownString).value;
-                }).join('\n');
+                if (hoverData && hoverData.length > 0) {
+                    const contents = hoverData[0].contents.map(c => {
+                        if (typeof c === 'string') {
+                            return c;
+                        }
+                        return (c as vscode.MarkdownString).value;
+                    }).join('\n');
 
-                typeInfo = this._parseTypeInfo(contents, word) ?? '情報なし';
+                    typeInfo = this._parseTypeInfo(contents, word) ?? '情報なし';
+                }
             }
         }
 
@@ -194,10 +211,17 @@ class ProgrammingSupportViewProvider implements vscode.WebviewViewProvider {
         }
 
         const escapedWord = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const typePattern = new RegExp(`^([\\s\\S]*?)\\s+${escapedWord}\\b`, 'i');
+        // 変数名の直後に配列の角括弧（例: message[14] や message[]）が
+        // 続く場合も検出できるように、末尾のグループを追加でキャプチャする
+        const typePattern = new RegExp(`^([\\s\\S]*?)\\s+${escapedWord}\\b\\s*(\\[[^\\]]*\\])?`, 'i');
         const wordInCode = targetText.match(typePattern);
         if (wordInCode) {
-            return wordInCode[1].trim();
+            let type = wordInCode[1].trim();
+            if (wordInCode[2]) {
+                // 配列として宣言されている場合は [] を付与して char と char[] を区別する
+                type += '[]';
+            }
+            return type;
         }
 
         return targetText.split('\n')[0].replace(/[`#*]/g, '').trim() || undefined;
