@@ -108,13 +108,36 @@ class ProgrammingSupportViewProvider implements vscode.WebviewViewProvider {
         }
 
         console.log('[ProgrammingSupport] cursor word:', JSON.stringify(word));
-        console.log('[ProgrammingSupport] definitions keys:', Object.keys(this._definitions));
+        console.log('[ProgrammingSupport] typeInfo:', JSON.stringify(typeInfo));
 
         if (this._definitions[word]) {
             definition = this._definitions[word];
-            console.log('[ProgrammingSupport] definition found:', definition);
-        } else {
-            console.log('[ProgrammingSupport] no definition for word:', word);
+            console.log('[ProgrammingSupport] definition found by word:', definition);
+        } 
+
+        else if (typeInfo !== '情報なし') {
+            let baseType = typeInfo.trim();
+
+            if (baseType.includes('[') || baseType.includes(']')) {
+                if (baseType.startsWith('char')) {
+                    baseType = 'char[]';
+                } else {
+                    baseType = baseType.replace(/\s*\[\d*\]/g, '[]').trim();
+                }
+            } else {
+                baseType = baseType.trim();
+            }
+            
+            console.log('[ProgrammingSupport] normalized baseType for search:', JSON.stringify(baseType));
+
+            if (this._definitions[baseType]) {
+                definition = this._definitions[baseType];
+                console.log('[ProgrammingSupport] definition found by type:', definition);
+            }
+        }
+
+        if (!definition) {
+            console.log('[ProgrammingSupport] no definition for word/type:', word, typeInfo);
         }
 
         this._view.webview.postMessage({
