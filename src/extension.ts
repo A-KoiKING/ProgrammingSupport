@@ -24,6 +24,15 @@ export function activate(context: vscode.ExtensionContext) {
             }
         })
     );
+
+    // エラー（Diagnostics）が更新されたときもパネルを更新する
+    context.subscriptions.push(
+        vscode.languages.onDidChangeDiagnostics(async () => {
+            if (vscode.window.activeTextEditor) {
+                await provider.updateVariableInfo(vscode.window.activeTextEditor);
+            }
+        })
+    );
 }
 
 class ProgrammingSupportViewProvider implements vscode.WebviewViewProvider {
@@ -157,14 +166,117 @@ class ProgrammingSupportViewProvider implements vscode.WebviewViewProvider {
             console.log('[ProgrammingSupport] no definition for word/type:', word, typeInfo);
         }
 
+        const errorHint = this._checkMissingSemicolon(editor.document, position);
+
         this._view.webview.postMessage({
             type: 'update',
             word,
             typeInfo,
             line: position.line + 1,
             character: position.character + 1,
-            definition
+            definition,
+            errorHint
         });
+    }
+
+    private _checkMissingSemicolon(document: vscode.TextDocument, position: vscode.Position): string | null {
+        // 1. VS Code の Diagnostics (C/C++拡張機能などのエラー) から検出
+        const diagnostics = vscode.languages.getDiagnostics(document.uri);
+        for (const diag of diagnostics) {
+            // カーソルがある行、またはその前後1行以内のエラーを対象にする
+            if (Math.abs(diag.range.start.line - position.line) <= 1) {
+                const msg = diag.message;
+                if (
+                    msg.includes("expected ';'") ||
+                    msg.includes("expected a ';'") ||
+                    msg.includes("';' が必要です")
+                ) {
+                    const errorLine = diag.range.start.line + 1;
+                    const errorLineText = document.lineAt(diag.range.start.line).text.split('//')[0].trim();
+                    if (errorLineText.endsWith(':')) {
+                        return `${errorLine}行目の末尾がコロン（:）になっています。セミコロン（;）の間違いではありませんか？`;
+                    }
+                    return `${errorLine}行目付近でエラーが出ています。この行、または「1つ前の行」の末尾にセミコロン（;）を忘れていませんか？`;
+                }
+            }
+        }
+
+        // 2. 簡易的な静的解析（C/C++拡張機能が入っていない環境や、入力直後向けの補助チェック）
+        const lineText = document.lineAt(position.line).text;
+        const currentError = this._checkLineSemicolonError(lineText, document, position.line);
+        if (currentError === 'colon') {
+            return `${position.line + 1}行目の末尾がコロン（:）になっています。セミコロン（;）の間違いではありませんか？`;
+        } else if (currentError === 'missing') {
+            return `${position.line + 1}行目の末尾にセミコロン（;）がない可能性があります。`;
+        }
+
+        // カーソル行に問題がなくても、1つ前の行にミスがある可能性がある場合
+        if (position.line > 0) {
+            const prevLineText = document.lineAt(position.line - 1).text;
+            const prevError = this._checkLineSemicolonError(prevLineText, document, position.line - 1);
+            if (prevError === 'colon') {
+                return `1つ上の行（${position.line}行目）の末尾がコロン（:）になっています。セミコロン（;）の間違いではありませんか？`;
+            } else if (prevError === 'missing') {
+                return `1つ上の行（${position.line}行目）の末尾にセミコロン（;）を忘れていませんか？`;
+            }
+        }
+
+        return null;
+    }
+
+    private _checkLineSemicolonError(lineText: string, document: vscode.TextDocument, lineNumber: number): 'missing' | 'colon' | null {
+        // 行末コメントを除去してトリム
+        const withoutInlineComment = lineText.split('//')[0].trim();
+
+        if (!withoutInlineComment) {
+            return null; // 空行やコメントのみの行はスキップ
+        }
+
+        // ブロックコメント内ならスキップ
+        if (this._isInsideBlockComment(document, new vscode.Position(lineNumber, withoutInlineComment.length))) {
+            return null;
+        }
+
+        // プリプロセッサ指令 (#include, #define など) はセミコロン不要
+        if (withoutInlineComment.startsWith('#')) {
+            return null;
+        }
+
+        // すでにセミコロン、波括弧、カンマ、行継続バックスラッシュで終わっている場合はOK
+        if (/[;{},\\]$/.test(withoutInlineComment)) {
+            return null;
+        }
+
+        // case文、default文、ラベル宣言（識別子:）はコロンで終わるのが正常構文なので除外
+        if (/^(case\s+[^:]+|default|[A-Za-z_]\w*)\s*:$/.test(withoutInlineComment)) {
+            return null;
+        }
+
+        // if, for, while, switch, else などの制御構文は除外
+        if (/^(if|for|while|switch)\s*\(.*\)$/.test(withoutInlineComment) || /^else\b/.test(withoutInlineComment)) {
+            return null;
+        }
+
+        // 次の行が '{' で始まっていれば関数定義や制御構文とみなす
+        if (lineNumber + 1 < document.lineCount) {
+            const nextLine = document.lineAt(lineNumber + 1).text.trim();
+            if (nextLine.startsWith('{')) {
+                return null;
+            }
+        }
+
+        // 代入文、関数呼び出し、return、break、変数宣言っぽい行であれば判定
+        const statementPattern = /^(\b(return|break|continue)\b|.*\b(printf|scanf)\s*\(|.*=.*|\b(int|char|float|double|long|short|unsigned|signed|bool|_Bool)\b\s+\w+)/;
+        if (!statementPattern.test(withoutInlineComment)) {
+            return null;
+        }
+
+        // 末尾がコロン（:）で終わっている場合は「セミコロンの代わりにコロンが入力されている」ミス
+        if (withoutInlineComment.endsWith(':')) {
+            return 'colon';
+        }
+
+        return 'missing';
     }
 
     private _isComment(lineText: string, character: number, document: vscode.TextDocument, position: vscode.Position): boolean {

@@ -13,6 +13,16 @@ int main()
     printf("%s\n", message);    //char配列を表示
     printf("Welcome to C programming!\n");
 
+    switch (age)
+    {
+        case 20:
+            printf("You are 20 years old.\n");
+            break;
+        default:
+            printf("Age is not 20.\n");
+            break;
+    }
+
     /*
         printf("This Line is not executed!\n");
     */

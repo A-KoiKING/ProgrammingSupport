@@ -41,6 +41,29 @@
             color: var(--vscode-symbolIcon-variableForeground);
         }
 
+        /* --- エラーヒントセクション --- */
+        #error-hint-section {
+            display: none;
+            background-color: var(--vscode-inputValidation-errorBackground, #5a1d1d);
+            border-left: 4px solid var(--vscode-inputValidation-errorBorder, #be1100);
+            color: var(--vscode-foreground);
+            padding: 10px 12px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+        }
+
+        .hint-title {
+            font-weight: bold;
+            color: var(--vscode-errorForeground, #f48771);
+            margin-bottom: 4px;
+            font-size: 0.95em;
+        }
+
+        .hint-body {
+            font-size: 0.9em;
+            line-height: 1.4;
+        }
+
         /* --- 定義情報セクション --- */
         #definition-section {
             display: none;
@@ -76,6 +99,12 @@
 </head>
 
 <body>
+    <!-- エラーヒント表示枠 -->
+    <div id="error-hint-section">
+        <div class="hint-title">💡 エラーのヒント</div>
+        <div id="error-hint-text" class="hint-body"></div>
+    </div>
+
     <div class="section">
         <div class="label">変数名</div>
         <div id="var-name" class="value">-</div>
@@ -121,6 +150,16 @@
                 document.getElementById('var-name').textContent = message.word;
                 document.getElementById('var-type').textContent = message.typeInfo;
                 document.getElementById('var-pos').textContent = `Line ${message.line}, Col ${message.character}`;
+
+                // エラーヒントの表示切り替え
+                const hintSection = document.getElementById('error-hint-section');
+                const hintText = document.getElementById('error-hint-text');
+                if (message.errorHint) {
+                    hintText.textContent = message.errorHint;
+                    hintSection.style.display = 'block';
+                } else {
+                    hintSection.style.display = 'none';
+                }
 
                 const defSection = document.getElementById('definition-section');
                 if (message.definition) {
