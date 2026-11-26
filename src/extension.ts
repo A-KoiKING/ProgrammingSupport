@@ -8,7 +8,10 @@ interface WordDefinition {
     notes?: string;
     warning?: string;
     category?: string;
+    header?: string;
 }
+
+type DisplayMode = 'variable' | 'function' | 'comment' | 'empty';
 
 export function activate(context: vscode.ExtensionContext) {
     const provider = new ProgrammingSupportViewProvider(context.extensionUri);
@@ -45,7 +48,8 @@ export function activate(context: vscode.ExtensionContext) {
 
 class ProgrammingSupportViewProvider implements vscode.WebviewViewProvider {
     private _view?: vscode.WebviewView;
-    private _definitions: Record<string, WordDefinition> = {};
+    private _variableDefinitions: Record<string, WordDefinition> = {};
+    private _functionDefinitions: Record<string, WordDefinition> = {};
     private _updateRequestId = 0;
 
     // 型キーワード自体を選択したときに、そのままキーとして扱う基本型の一覧
@@ -70,23 +74,29 @@ class ProgrammingSupportViewProvider implements vscode.WebviewViewProvider {
     }
 
     private _loadDefinitions(): void {
-        const jsonPath = path.join(this._extensionUri.fsPath, 'keywords', 'c.json');
+        this._variableDefinitions = this._loadJsonDefinitions('c_variable.json');
+        this._functionDefinitions = this._loadJsonDefinitions('c_functions.json');
+    }
 
-        // ← まずここをVSCodeの出力パネルで確認
-        console.log('[ProgrammingSupport] c.json path:', jsonPath);
-        console.log('[ProgrammingSupport] file exists:', fs.existsSync(jsonPath));
+    private _loadJsonDefinitions(fileName: string): Record<string, WordDefinition> {
+        const jsonPath = path.join(this._extensionUri.fsPath, 'keywords', fileName);
 
-        if (fs.existsSync(jsonPath)) {
-            try {
-                const raw = fs.readFileSync(jsonPath, 'utf8');
-                this._definitions = JSON.parse(raw);
-                console.log('[ProgrammingSupport] loaded keys:', Object.keys(this._definitions));
-            } catch (e) {
-                console.error('[ProgrammingSupport] JSON parse error:', e);
-                this._definitions = {};
-            }
-        } else {
-            console.warn('[ProgrammingSupport] c.json not found');
+        console.log(`[ProgrammingSupport] ${fileName} path:`, jsonPath);
+        console.log(`[ProgrammingSupport] ${fileName} exists:`, fs.existsSync(jsonPath));
+
+        if (!fs.existsSync(jsonPath)) {
+            console.warn(`[ProgrammingSupport] ${fileName} not found`);
+            return {};
+        }
+
+        try {
+            const raw = fs.readFileSync(jsonPath, 'utf8');
+            const parsed = JSON.parse(raw) as Record<string, WordDefinition>;
+            console.log(`[ProgrammingSupport] loaded ${fileName} keys:`, Object.keys(parsed).length);
+            return parsed;
+        } catch (e) {
+            console.error(`[ProgrammingSupport] ${fileName} JSON parse error:`, e);
+            return {};
         }
     }
 
@@ -132,20 +142,26 @@ class ProgrammingSupportViewProvider implements vscode.WebviewViewProvider {
         const lineText = document.lineAt(position.line).text;
         const range = document.getWordRangeAtPosition(position);
 
-        let word = 'なし';
+        let mode: DisplayMode = 'empty';
+        let word = '';
         let typeInfo = '情報なし';
+        let definition: WordDefinition | null = null;
 
         const commentInfo = this._getCommentInfo(document, position);
         if (commentInfo.isComment) {
+            mode = 'comment';
             word = commentInfo.text || 'コメント内';
             typeInfo = 'コメント';
+            definition = this._lookupDefinition(word, typeInfo);
         } else if (range) {
             word = document.getText(range);
 
             if (ProgrammingSupportViewProvider.BASE_TYPE_KEYWORDS.has(word)) {
                 // "char" や "int" などの型キーワード自体を選択した場合は、
                 // ホバー解析を経由せず複合型（unsigned int / long long 等）や配列宣言を判定する。
+                mode = 'variable';
                 typeInfo = this._resolveTypeKeywordAtPosition(lineText, position, word);
+                definition = this._lookupDefinition(word, typeInfo);
             } else {
                 const hoverData = await vscode.commands.executeCommand<vscode.Hover[]>(
                     'vscode.executeHoverProvider',
@@ -182,16 +198,25 @@ class ProgrammingSupportViewProvider implements vscode.WebviewViewProvider {
                 if (typeInfo === '情報なし') {
                     typeInfo = this._findLocalDeclarationType(document, position, word) ?? '情報なし';
                 }
+
+                const funcDef = Object.hasOwn(this._functionDefinitions, word)
+                    ? this._functionDefinitions[word]
+                    : undefined;
+                if (funcDef && (typeInfo === '関数' || typeInfo === '情報なし')) {
+                    mode = 'function';
+                    typeInfo = '標準関数';
+                    definition = funcDef;
+                } else {
+                    mode = 'variable';
+                    definition = this._lookupDefinition(word, typeInfo);
+                }
             }
         }
 
-        console.log('[ProgrammingSupport] cursor word:', JSON.stringify(word));
+        console.log('[ProgrammingSupport] mode:', mode, 'cursor word:', JSON.stringify(word));
         console.log('[ProgrammingSupport] typeInfo:', JSON.stringify(typeInfo));
 
-        // 型キーワード自体を選択した場合（例: char[]）は typeInfo 側を優先して辞書検索する
-        const definition = this._lookupDefinition(word, typeInfo);
-
-        if (!definition) {
+        if (mode !== 'empty' && !definition) {
             console.log('[ProgrammingSupport] no definition for word/type:', word, typeInfo);
         }
 
@@ -199,6 +224,7 @@ class ProgrammingSupportViewProvider implements vscode.WebviewViewProvider {
 
         this._view.webview.postMessage({
             type: 'update',
+            mode,
             word,
             typeInfo,
             line: position.line + 1,
@@ -828,8 +854,8 @@ class ProgrammingSupportViewProvider implements vscode.WebviewViewProvider {
 
     private _lookupDefinition(word: string, typeInfo: string): WordDefinition | null {
         const isTypeKeyword = ProgrammingSupportViewProvider.BASE_TYPE_KEYWORDS.has(word);
-        if (!isTypeKeyword && this._definitions[word]) {
-            return this._definitions[word];
+        if (!isTypeKeyword && Object.hasOwn(this._variableDefinitions, word)) {
+            return this._variableDefinitions[word];
         }
 
         if (typeInfo !== '情報なし') {
@@ -838,15 +864,15 @@ class ProgrammingSupportViewProvider implements vscode.WebviewViewProvider {
 
             const candidates = this._buildLookupCandidates(normalized);
             for (const key of candidates) {
-                if (this._definitions[key]) {
+                if (Object.hasOwn(this._variableDefinitions, key)) {
                     console.log('[ProgrammingSupport] definition found by key:', key);
-                    return this._definitions[key];
+                    return this._variableDefinitions[key];
                 }
             }
         }
 
-        if (this._definitions[word]) {
-            return this._definitions[word];
+        if (Object.hasOwn(this._variableDefinitions, word)) {
+            return this._variableDefinitions[word];
         }
 
         return null;

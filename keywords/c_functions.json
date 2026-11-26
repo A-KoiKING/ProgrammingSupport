@@ -1,0 +1,418 @@
+{
+    "printf": {
+        "header": "<stdio.h>",
+        "category": "標準入出力",
+        "description": "書式指定に従って文字列や変数の値を標準出力（画面）に表示する関数",
+        "example": "printf(\"Age: %d\\n\", age);",
+        "notes": "%d（整数）、%f（浮動小数点数）、%c（文字）、%s（文字列）などの変換指定子を使用します。戻り値は出力した文字数です。",
+        "warning": "変換指定子と渡す変数の型・個数が一致していないと、文字化けや未定義動作の原因になります。"
+    },
+    "scanf": {
+        "header": "<stdio.h>",
+        "category": "標準入出力",
+        "description": "標準入力（キーボード）から書式指定に従ってデータを読み込む関数",
+        "example": "int num;\nscanf(\"%d\", &num);",
+        "notes": "変数に値を格納するため、配列（文字列）以外の変数にはアドレス演算子 & を付けて渡します。戻り値は正常に読み込めた項目数です。",
+        "warning": "文字列（%s）を読み込む際に文字数制限（例: %19s）を指定しないと、バッファオーバーフローを起こす危険があります。& の付け忘れにも注意してください。"
+    },
+    "fprintf": {
+        "header": "<stdio.h>",
+        "category": "ファイル・ストリーム入出力",
+        "description": "指定した出力ストリーム（ファイルや stderr など）に書式付きで出力する関数",
+        "example": "fprintf(stderr, \"Error: code=%d\\n\", code);",
+        "notes": "第1引数に FILE*（fopen の戻り値や stdout / stderr）を指定する点以外は printf と同じです。",
+        "warning": "第1引数に NULL や閉じられた FILE* を渡すとクラッシュや未定義動作になります。"
+    },
+    "fscanf": {
+        "header": "<stdio.h>",
+        "category": "ファイル・ストリーム入出力",
+        "description": "指定した入力ストリーム（ファイルなど）から書式付きでデータを読み込む関数",
+        "example": "fscanf(fp, \"%d %s\", &id, name);",
+        "notes": "ファイルの終端に達した場合や読み込みエラー時は EOF を返します。",
+        "warning": "入力の書式が期待通りでない場合、無限ループになることがあるため戻り値を確認してください。"
+    },
+    "sprintf": {
+        "header": "<stdio.h>",
+        "category": "文字列フォーマット",
+        "description": "書式指定に従って整形した文字列を文字配列（バッファ）に書き込む関数",
+        "example": "char buf[64];\nsprintf(buf, \"Score: %d\", score);",
+        "notes": "画面には出力せず、第1引数の文字配列に結果を格納します。",
+        "warning": "出力先配列のサイズを超えるとバッファオーバーフローが発生するため、サイズ上限を指定できる snprintf の使用を推奨します。"
+    },
+    "snprintf": {
+        "header": "<stdio.h>",
+        "category": "文字列フォーマット",
+        "description": "最大サイズを指定して、書式付き文字列を文字配列に安全に書き込む関数",
+        "example": "char buf[64];\nsnprintf(buf, sizeof(buf), \"User: %s\", name);",
+        "notes": "第2引数にバッファサイズ（終端の '\\0' を含むバイト数）を指定するため、配列外への書き込みを防げます。",
+        "warning": "書き込みが最大サイズで切り詰められた場合でも、戻り値は「本来書き込まれるはずだった文字数」を返します。"
+    },
+    "fgets": {
+        "header": "<stdio.h>",
+        "category": "標準入出力",
+        "description": "指定したストリームから1行分の文字列を安全に読み込む関数",
+        "example": "char line[100];\nfgets(line, sizeof(line), stdin);",
+        "notes": "最大 (サイズ - 1) 文字まで読み込み、末尾に自動で '\\0' を付けます。標準入力からは stdin を指定します。",
+        "warning": "入力行がバッファに収まる場合、末尾の改行文字 '\\n' も文字列に含まれる点に注意してください。"
+    },
+    "fputs": {
+        "header": "<stdio.h>",
+        "category": "ファイル・ストリーム入出力",
+        "description": "指定したストリームに文字列をそのまま出力する関数",
+        "example": "fputs(\"Hello\\n\", stdout);",
+        "notes": "puts と異なり、末尾に自動で改行文字を追加しません。",
+        "warning": "ヌル文字 '\\0' で終端されていない文字配列を渡すと、メモリ外まで出力し続けてしまいます。"
+    },
+    "puts": {
+        "header": "<stdio.h>",
+        "category": "標準入出力",
+        "description": "文字列を標準出力に表示し、最後に改行を出力する関数",
+        "example": "puts(\"Hello, World!\");",
+        "notes": "書式指定が不要な単純な文字列出力では printf より高速で安全です。",
+        "warning": "自動的に末尾へ改行（\\n）が付くため、改行したくない場合は printf(\"%s\", str) や fputs を使用してください。"
+    },
+    "getchar": {
+        "header": "<stdio.h>",
+        "category": "標準入出力",
+        "description": "標準入力から1文字だけ読み込む関数",
+        "example": "int ch = getchar();",
+        "notes": "入力の終端（EOF）を判別できるように、戻り値の型は char ではなく int になっています。",
+        "warning": "戻り値を char 型で受け取ると EOF（通常 -1）を正しく判定できない環境があるため、int 型で受け取ってください。"
+    },
+    "putchar": {
+        "header": "<stdio.h>",
+        "category": "標準入出力",
+        "description": "標準出力に1文字だけ出力する関数",
+        "example": "putchar('A');",
+        "notes": "printf(\"%c\", ch) と同じ結果をより軽量に出力できます。",
+        "warning": "引数は int 型ですが、内部的には unsigned char に変換されて出力されます。"
+    },
+    "fopen": {
+        "header": "<stdio.h>",
+        "category": "ファイル操作",
+        "description": "指定したファイルを開き、ファイル操作用のポインタ（FILE*）を返す関数",
+        "example": "FILE *fp = fopen(\"data.txt\", \"r\");",
+        "notes": "モードには \"r\"（読込）、\"w\"（書込・上書き）、\"a\"（追記）などを指定します。",
+        "warning": "ファイルが開けなかった場合は NULL を返すため、必ず NULL チェックを行ってください。"
+    },
+    "fclose": {
+        "header": "<stdio.h>",
+        "category": "ファイル操作",
+        "description": "開いたファイルを閉じる関数",
+        "example": "fclose(fp);",
+        "notes": "出力バッファに残っているデータを確実にディスクへ書き出し、リソースを解放します。",
+        "warning": "NULL ポインタや、すでに閉じた FILE* を渡さないようにしてください。"
+    },
+    "feof": {
+        "header": "<stdio.h>",
+        "category": "ファイル操作",
+        "description": "ファイルストリームが終端（EOF）に達しているかを判定する関数",
+        "example": "if (feof(fp)) { /* 終端到達 */ }",
+        "notes": "読み込み関数が失敗した後に「終端に達したのか、エラーなのか」を確認する用途で使います。",
+        "warning": "次の読み込み前に終端を先読みする関数ではないため、while (!feof(fp)) をループ条件にすると最後の行を2回処理するバグになりやすいです。"
+    },
+    "perror": {
+        "header": "<stdio.h>",
+        "category": "エラー出力",
+        "description": "直前に発生したシステムエラー（errno）の内容を標準エラー出力に表示する関数",
+        "example": "if (fp == NULL) {\n    perror(\"fopen failed\");\n}",
+        "notes": "指定した文字列の後ろに \": エラーメッセージ\" を付けて出力します。",
+        "warning": "エラーが発生していない状態で呼ぶと \"Success\" 等が出力されるため、失敗判定の直後に呼び出してください。"
+    },
+    "malloc": {
+        "header": "<stdlib.h>",
+        "category": "メモリ管理",
+        "description": "指定したバイト数のメモリ領域をヒープ領域に動的に確保する関数",
+        "example": "int *arr = (int *)malloc(sizeof(int) * 10);",
+        "notes": "確保したメモリは関数を抜けても残り、不要になったら free() で解放する必要があります。",
+        "warning": "確保したメモリの中身は初期化されない（ゴミ値が入っている）点と、確保失敗時に NULL が返る点に注意してください。"
+    },
+    "calloc": {
+        "header": "<stdlib.h>",
+        "category": "メモリ管理",
+        "description": "指定した要素数とサイズのメモリ領域を確保し、全ビットを 0 で初期化する関数",
+        "example": "int *arr = (int *)calloc(10, sizeof(int));",
+        "notes": "malloc と異なり、確保された領域が自動的に 0 クリアされます。",
+        "warning": "確保失敗時は NULL を返すため、使用前に必ず NULL チェックを行ってください。使用後は free() が必要です。"
+    },
+    "realloc": {
+        "header": "<stdlib.h>",
+        "category": "メモリ管理",
+        "description": "すでに動的確保したメモリ領域のサイズを変更する関数",
+        "example": "int *tmp = (int *)realloc(arr, sizeof(int) * 20);",
+        "notes": "新しいサイズに合わせて領域を拡張または縮小し、元のデータを保持します。",
+        "warning": "失敗すると NULL を返しますが元の領域は解放されないため、元のポインタ変数へ直接上書きせず一時変数で受け取ってください。"
+    },
+    "free": {
+        "header": "<stdlib.h>",
+        "category": "メモリ管理",
+        "description": "malloc / calloc / realloc で確保した動的メモリを解放する関数",
+        "example": "free(arr);\narr = NULL;",
+        "notes": "NULL を渡した場合は何も行いません。",
+        "warning": "同じポインタを2回解放する（二重解放）と重大なバグ・クラッシュの原因になります。解放後は NULL を代入しておくと安全です。"
+    },
+    "exit": {
+        "header": "<stdlib.h>",
+        "category": "プロセス制御",
+        "description": "プログラムを直ちに終了し、OSに終了ステータスを返す関数",
+        "example": "if (fp == NULL) {\n    exit(1);\n}",
+        "notes": "通常、正常終了には 0（または EXIT_SUCCESS）、異常終了には 0 以外（または EXIT_FAILURE）を指定します。",
+        "warning": "呼び出した時点でプログラム全体が終了するため、必要なファイル保存や後処理は済ませておいてください。"
+    },
+    "atoi": {
+        "header": "<stdlib.h>",
+        "category": "型変換",
+        "description": "数字を表す文字列を int 型の整数に変換する関数",
+        "example": "int val = atoi(\"123\");",
+        "notes": "先頭の空白を読み飛ばし、符号と数字列を解釈します。",
+        "warning": "変換できない文字列（\"abc\" など）を渡してもエラーにならず 0 を返し、オーバーフロー時も未定義動作になるため、厳密な判定には strtol を推奨します。"
+    },
+    "atof": {
+        "header": "<stdlib.h>",
+        "category": "型変換",
+        "description": "数値を表す文字列を double 型の浮動小数点数に変換する関数",
+        "example": "double val = atof(\"3.14\");",
+        "notes": "整数表記や指数表記（\"1.5e2\"）の文字列も変換できます。",
+        "warning": "atoi と同様にエラー検出ができないため、厳密な変換には strtod の使用を推奨します。"
+    },
+    "strtol": {
+        "header": "<stdlib.h>",
+        "category": "型変換",
+        "description": "文字列を long 型の整数へエラー検出付きで変換する関数",
+        "example": "char *end;\nlong val = strtol(str, &end, 10);",
+        "notes": "第3引数で基数（10進数なら 10、16進数なら 16）を指定でき、第2引数で変換終了位置を受け取れます。",
+        "warning": "変換結果が範囲外の場合は errno に ERANGE が設定されるため、必要に応じて確認してください。"
+    },
+    "rand": {
+        "header": "<stdlib.h>",
+        "category": "乱数",
+        "description": "0 から RAND_MAX までの疑似乱数（整数）を生成する関数",
+        "example": "int dice = rand() % 6 + 1;",
+        "notes": "毎回異なる乱数列を得るには、事前に srand() で乱数の種（シード）を設定します。",
+        "warning": "srand() を呼ばないと、プログラムを実行するたびに毎回同じ乱数列が生成されます。"
+    },
+    "srand": {
+        "header": "<stdlib.h>",
+        "category": "乱数",
+        "description": "rand() が生成する疑似乱数の種（シード値）を設定する関数",
+        "example": "srand((unsigned int)time(NULL));",
+        "notes": "通常はプログラム開始時に1回だけ呼び出し、現在時刻 time(NULL) を種として渡します。",
+        "warning": "ループの中で毎回 srand(time(NULL)) を呼ぶと、同じ秒数の間ずっと同じ乱数になってしまうため注意してください。"
+    },
+    "abs": {
+        "header": "<stdlib.h>",
+        "category": "数値計算",
+        "description": "int 型整数の絶対値を返す関数",
+        "example": "int diff = abs(a - b);",
+        "notes": "long 型には labs()、浮動小数点数（double）には <math.h> の fabs() を使用します。",
+        "warning": "浮動小数点数を abs() に渡すと小数部が切り捨てられるため、小数には fabs() を使ってください。"
+    },
+    "qsort": {
+        "header": "<stdlib.h>",
+        "category": "アルゴリズム",
+        "description": "配列の要素を指定した比較関数を使って並び替える（ソートする）関数",
+        "example": "qsort(arr, n, sizeof(int), compare_int);",
+        "notes": "要素数・1要素のサイズ・比較用関数ポインタを渡すことで、あらゆる型の配列をソートできます。",
+        "warning": "比較関数の戻り値（負・0・正）の符号が逆になると降順/昇順が反転し、比較に引き算を使うとオーバーフローする恐れがあります。"
+    },
+    "strlen": {
+        "header": "<string.h>",
+        "category": "文字列操作",
+        "description": "文字列の長さ（終端の '\\0' を含まない文字数）を取得する関数",
+        "example": "size_t len = strlen(message);",
+        "notes": "戻り値の型は size_t（符号なし整数型）です。配列の確保サイズではなく、文字列の実際の長さを返します。",
+        "warning": "ヌル文字 '\\0' で終端されていない配列や NULL を渡すと、不正なメモリアクセスでクラッシュします。"
+    },
+    "strcpy": {
+        "header": "<string.h>",
+        "category": "文字列操作",
+        "description": "文字列を別の文字配列へコピーする関数",
+        "example": "char dst[32];\nstrcpy(dst, \"Hello\");",
+        "notes": "終端の '\\0' まで含めてコピーします。",
+        "warning": "コピー先の配列サイズが不足しているとバッファオーバーフローを起こすため、サイズ制限ができる strncpy や snprintf の利用を検討してください。"
+    },
+    "strncpy": {
+        "header": "<string.h>",
+        "category": "文字列操作",
+        "description": "最大文字数を指定して文字列を別の文字配列へコピーする関数",
+        "example": "strncpy(dst, src, sizeof(dst) - 1);\ndst[sizeof(dst) - 1] = '\\0';",
+        "notes": "指定文字数に達するまでコピーし、余った部分は '\\0' で埋められます。",
+        "warning": "コピー元が指定文字数以上の場合、末尾に '\\0' が付かないため、手動で dst[size - 1] = '\\0' を設定する必要があります。"
+    },
+    "strcat": {
+        "header": "<string.h>",
+        "category": "文字列操作",
+        "description": "ある文字列の末尾に別の文字列を連結する関数",
+        "example": "char s[32] = \"Hello, \";\nstrcat(s, \"World!\");",
+        "notes": "第1引数の末尾にある '\\0' の位置から第2引数を連結します。",
+        "warning": "第1引数の配列に連結後の文字列＋'\\0' が収まる十分な空き容量がないと、メモリ破壊が発生します。"
+    },
+    "strncat": {
+        "header": "<string.h>",
+        "category": "文字列操作",
+        "description": "最大文字数を指定して文字列の末尾に別の文字列を連結する関数",
+        "example": "strncat(dst, src, sizeof(dst) - strlen(dst) - 1);",
+        "notes": "strncpy と異なり、連結後の末尾には必ず '\\0' を付加します。",
+        "warning": "第3引数は「バッファ全体のサイズ」ではなく「追加する最大文字数」である点に注意してください。"
+    },
+    "strcmp": {
+        "header": "<string.h>",
+        "category": "文字列操作",
+        "description": "2つの文字列の内容を辞書順で比較する関数",
+        "example": "if (strcmp(a, b) == 0) {\n    /* 一致 */\n}",
+        "notes": "一致する場合は 0、a < b なら負の値、a > b なら正の値を返します。",
+        "warning": "C言語では a == b で文字列の中身は比較できません。また「一致時に 0」が返るため、if (strcmp(a, b)) と書くと不一致時に真になる点に注意してください。"
+    },
+    "strncmp": {
+        "header": "<string.h>",
+        "category": "文字列操作",
+        "description": "先頭から最大 n 文字までを指定して2つの文字列を比較する関数",
+        "example": "if (strncmp(cmd, \"exit\", 4) == 0) { ... }",
+        "notes": "プレフィックス（先頭一致）の判定や、最大長を制限したい比較に便利です。",
+        "warning": "strcmp と同様、完全一致時は 0 を返します。"
+    },
+    "strchr": {
+        "header": "<string.h>",
+        "category": "文字列検索",
+        "description": "文字列の中から指定した文字が最初に出現する位置を検索する関数",
+        "example": "char *p = strchr(str, ',');",
+        "notes": "見つかった場合はその文字へのポインタを、見つからなかった場合は NULL を返します。",
+        "warning": "戻り値が NULL のままポインタを参照するとクラッシュするため、必ず NULL チェックを行ってください。"
+    },
+    "strstr": {
+        "header": "<string.h>",
+        "category": "文字列検索",
+        "description": "文字列の中から指定した部分文字列が最初に出現する位置を検索する関数",
+        "example": "char *p = strstr(text, \"error\");",
+        "notes": "見つかった場合は開始位置へのポインタを、見つからない場合は NULL を返します。",
+        "warning": "戻り値が NULL になる可能性があるため、使用前に NULL チェックが必要です。"
+    },
+    "memcpy": {
+        "header": "<string.h>",
+        "category": "メモリ操作",
+        "description": "指定したバイト数のメモリ領域を別の領域へそのままコピーする関数",
+        "example": "memcpy(dst, src, sizeof(int) * n);",
+        "notes": "文字列だけでなく構造体や配列など、あらゆるデータのコピーに使用できます。",
+        "warning": "コピー元とコピー先のメモリ領域が重なっている場合は未定義動作になります（重なりがある場合は memmove を使用してください）。"
+    },
+    "memset": {
+        "header": "<string.h>",
+        "category": "メモリ操作",
+        "description": "指定したメモリ領域を特定の1バイト値で一括埋め（初期化）する関数",
+        "example": "memset(arr, 0, sizeof(arr));",
+        "notes": "配列や構造体を 0 クリアする際によく使われます。",
+        "warning": "1バイト単位で値を埋めるため、int 配列を 0 や -1 以外の数値（例: 1）で初期化しようとすると期待通りの値になりません。"
+    },
+    "sqrt": {
+        "header": "<math.h>",
+        "category": "数値計算",
+        "description": "数値の平方根（ルート）を計算する関数",
+        "example": "double r = sqrt(2.0);",
+        "notes": "引数は double 型で受け取り、double 型で結果を返します。",
+        "warning": "負の数を渡すと定義域エラー（NaN など）になります。Linux 環境等ではコンパイル時に -lm オプションが必要な場合があります。"
+    },
+    "pow": {
+        "header": "<math.h>",
+        "category": "数値計算",
+        "description": "べき乗（x の y 乗）を計算する関数",
+        "example": "double val = pow(2.0, 10.0);",
+        "notes": "第1引数が底、第2引数が指数です。",
+        "warning": "浮動小数点数で計算するため誤差が生じることがあります。整数の2乗などは x * x の方が高速で正確です。"
+    },
+    "fabs": {
+        "header": "<math.h>",
+        "category": "数値計算",
+        "description": "浮動小数点数（double 型）の絶対値を返す関数",
+        "example": "double diff = fabs(a - b);",
+        "notes": "小数を含む値の絶対値計算に使用します。",
+        "warning": "整数用の abs() と間違えて abs(double値) を使うと小数部が失われるため注意してください。"
+    },
+    "sin": {
+        "header": "<math.h>",
+        "category": "三角関数",
+        "description": "角度（ラジアン）に対する正弦（サイン）を計算する関数",
+        "example": "double y = sin(rad);",
+        "notes": "角度の単位は度数法（°）ではなくラジアン（弧度法）です。",
+        "warning": "度数法の角度をそのまま渡すと正しい値が得られません（度 * M_PI / 180.0 で変換します）。"
+    },
+    "cos": {
+        "header": "<math.h>",
+        "category": "三角関数",
+        "description": "角度（ラジアン）に対する余弦（コサイン）を計算する関数",
+        "example": "double x = cos(rad);",
+        "notes": "角度の単位はラジアンです。",
+        "warning": "度数法の角度をそのまま渡さないよう注意してください。"
+    },
+    "tan": {
+        "header": "<math.h>",
+        "category": "三角関数",
+        "description": "角度（ラジアン）に対する正接（タンジェント）を計算する関数",
+        "example": "double t = tan(rad);",
+        "notes": "角度の単位はラジアンです。",
+        "warning": "π/2（90度）付近など cos が 0 になる角度では値が発散します。"
+    },
+    "ceil": {
+        "header": "<math.h>",
+        "category": "数値計算",
+        "description": "小数点以下を切り上げて、元の値以上で最小の整数値（double型）を返す関数",
+        "example": "double v = ceil(3.2); // 4.0",
+        "notes": "負の数（例: -3.2）の場合は -3.0 になります。",
+        "warning": "戻り値の型は int ではなく double です。"
+    },
+    "floor": {
+        "header": "<math.h>",
+        "category": "数値計算",
+        "description": "小数点以下を切り捨てて、元の値以下で最大の整数値（double型）を返す関数",
+        "example": "double v = floor(3.8); // 3.0",
+        "notes": "負の数（例: -3.2）の場合は -4.0 になります。",
+        "warning": "戻り値の型は int ではなく double です。"
+    },
+    "isalpha": {
+        "header": "<ctype.h>",
+        "category": "文字判定・変換",
+        "description": "文字がアルファベット（A-Z または a-z）かどうかを判定する関数",
+        "example": "if (isalpha((unsigned char)c)) { ... }",
+        "notes": "該当する場合は 0 以外（真）、該当しない場合は 0（偽）を返します。",
+        "warning": "負の値になりうる signed char をそのまま渡すと未定義動作になるため、(unsigned char) にキャストして渡すのが安全です。"
+    },
+    "isdigit": {
+        "header": "<ctype.h>",
+        "category": "文字判定・変換",
+        "description": "文字が数字（'0' 〜 '9'）かどうかを判定する関数",
+        "example": "if (isdigit((unsigned char)c)) { ... }",
+        "notes": "該当する場合は 0 以外（真）、該当しない場合は 0（偽）を返します。",
+        "warning": "char 型が負の値を持つ場合（日本語文字など）は (unsigned char) にキャストして渡してください。"
+    },
+    "isspace": {
+        "header": "<ctype.h>",
+        "category": "文字判定・変換",
+        "description": "文字が空白文字（スペース、タブ、改行など）かどうかを判定する関数",
+        "example": "if (isspace((unsigned char)c)) { ... }",
+        "notes": "' '、'\\t'、'\\n'、'\\r'、'\\v'、'\\f' に対して 0 以外を返します。",
+        "warning": "EOF 以外の負の値を渡さないよう、(unsigned char) へキャストしてください。"
+    },
+    "toupper": {
+        "header": "<ctype.h>",
+        "category": "文字判定・変換",
+        "description": "小文字のアルファベットを大文字に変換する関数",
+        "example": "char upper = (char)toupper((unsigned char)c);",
+        "notes": "小文字以外の文字を渡した場合はそのまま返されます。",
+        "warning": "引数には EOF または (unsigned char) にキャストした値を渡してください。"
+    },
+    "tolower": {
+        "header": "<ctype.h>",
+        "category": "文字判定・変換",
+        "description": "大文字のアルファベットを小文字に変換する関数",
+        "example": "char lower = (char)tolower((unsigned char)c);",
+        "notes": "大文字以外の文字を渡した場合はそのまま返されます。",
+        "warning": "引数には EOF または (unsigned char) にキャストした値を渡してください。"
+    },
+    "time": {
+        "header": "<time.h>",
+        "category": "日時・時刻",
+        "description": "現在の暦時刻（通常 1970年1月1日からの経過秒数）を取得する関数",
+        "example": "time_t now = time(NULL);",
+        "notes": "引数に NULL を渡すと戻り値として時刻を返します。srand() のシード生成にもよく使われます。",
+        "warning": "時刻の精度は通常1秒単位です。より細かい時間計測には clock() などを使用してください。"
+    }
+}

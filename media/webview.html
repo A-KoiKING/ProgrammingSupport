@@ -41,6 +41,51 @@
             color: var(--vscode-symbolIcon-variableForeground);
         }
 
+        .header-tag {
+            background-color: var(--vscode-textBlockQuote-background);
+            padding: 4px 8px;
+            border-radius: 4px;
+            display: inline-block;
+            margin-top: 5px;
+            font-family: var(--vscode-editor-font-family, monospace);
+            color: var(--vscode-symbolIcon-functionForeground, var(--vscode-symbolIcon-variableForeground));
+        }
+
+        .category-badge {
+            background-color: var(--vscode-badge-background);
+            color: var(--vscode-badge-foreground);
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 0.85em;
+            display: inline-block;
+            margin-top: 2px;
+        }
+
+        /* --- 未選択時の案内メッセージ --- */
+        #empty-state {
+            background-color: var(--vscode-textBlockQuote-background);
+            border-left: 3px solid var(--vscode-textBlockQuote-border);
+            padding: 12px 14px;
+            border-radius: 4px;
+            color: var(--vscode-descriptionForeground);
+            font-size: 0.92em;
+            line-height: 1.5;
+        }
+
+        .empty-title {
+            font-weight: 600;
+            color: var(--vscode-foreground);
+            margin-bottom: 4px;
+        }
+
+        #info-container {
+            display: none;
+        }
+
+        #header-section {
+            display: none;
+        }
+
         /* --- エラーヒントセクション --- */
         #error-hint-section {
             display: none;
@@ -82,6 +127,7 @@
             font-family: var(--vscode-editor-font-family, monospace);
             font-size: 0.95em;
             margin-top: 4px;
+            white-space: pre-wrap;
             word-break: break-all;
         }
 
@@ -105,40 +151,52 @@
         <div id="error-hint-text" class="hint-body"></div>
     </div>
 
-    <div class="section">
-        <div class="label">変数名</div>
-        <div id="var-name" class="value">-</div>
-    </div>
-    <div class="section">
-        <div class="label">型</div>
-        <div id="var-type" class="type-tag">-</div>
-    </div>
-    <div class="section">
-        <div class="label">行</div>
-        <div id="var-pos" class="value">-</div>
+    <!-- 未選択時の案内メッセージ -->
+    <div id="empty-state">
+        <div class="empty-title">要素が選択されていません</div>
+        <div>変数、型、または標準関数にカーソルを置くと、ここに詳細な説明が表示されます。</div>
     </div>
 
-    <!-- JSON定義情報セクション -->
-    <div id="definition-section">
-        <div class="section def-row">
-            <div class="label">カテゴリ</div>
-            <span id="def-category" class="category-badge">-</span>
+    <div id="info-container">
+        <div class="section">
+            <div id="name-label" class="label">変数名</div>
+            <div id="var-name" class="value">-</div>
         </div>
-        <div class="section def-row">
-            <div class="label">説明</div>
-            <div id="def-description" class="value"></div>
+        <div id="type-section" class="section">
+            <div class="label">型</div>
+            <div id="var-type" class="type-tag">-</div>
         </div>
-        <div class="section def-row">
-            <div class="label">例</div>
-            <code id="def-example" class="def-example"></code>
+        <div id="header-section" class="section">
+            <div class="label">ヘッダ</div>
+            <div id="func-header" class="header-tag">-</div>
         </div>
-        <div class="section def-row">
-            <div class="label">備考</div>
-            <div id="def-notes"></div>
+        <div id="pos-section" class="section">
+            <div class="label">行</div>
+            <div id="var-pos" class="value">-</div>
         </div>
-        <div class="def-row">
-            <div class="label">注意点</div>
-            <span id="def-warning" class="def-warning"></span>
+
+        <!-- JSON定義情報セクション -->
+        <div id="definition-section">
+            <div class="section def-row">
+                <div class="label">カテゴリ</div>
+                <span id="def-category" class="category-badge">-</span>
+            </div>
+            <div class="section def-row">
+                <div class="label">説明</div>
+                <div id="def-description" class="value"></div>
+            </div>
+            <div class="section def-row">
+                <div class="label">例</div>
+                <code id="def-example" class="def-example"></code>
+            </div>
+            <div class="section def-row">
+                <div class="label">備考</div>
+                <div id="def-notes"></div>
+            </div>
+            <div class="def-row">
+                <div class="label">注意点</div>
+                <span id="def-warning" class="def-warning"></span>
+            </div>
         </div>
     </div>
 
@@ -147,10 +205,6 @@
         window.addEventListener('message', event => {
             const message = event.data;
             if (message.type === 'update') {
-                document.getElementById('var-name').textContent = message.word;
-                document.getElementById('var-type').textContent = message.typeInfo;
-                document.getElementById('var-pos').textContent = `Line ${message.line}, Col ${message.character}`;
-
                 // エラーヒントの表示切り替え
                 const hintSection = document.getElementById('error-hint-section');
                 const hintText = document.getElementById('error-hint-text');
@@ -160,6 +214,41 @@
                 } else {
                     hintSection.style.display = 'none';
                 }
+
+                const emptyState = document.getElementById('empty-state');
+                const infoContainer = document.getElementById('info-container');
+
+                if (message.mode === 'empty') {
+                    emptyState.style.display = 'block';
+                    infoContainer.style.display = 'none';
+                    return;
+                }
+
+                emptyState.style.display = 'none';
+                infoContainer.style.display = 'block';
+
+                const nameLabel = document.getElementById('name-label');
+                const typeSection = document.getElementById('type-section');
+                const headerSection = document.getElementById('header-section');
+
+                if (message.mode === 'function') {
+                    nameLabel.textContent = '関数名';
+                    typeSection.style.display = 'none';
+                    if (message.definition && message.definition.header) {
+                        document.getElementById('func-header').textContent = message.definition.header;
+                        headerSection.style.display = 'block';
+                    } else {
+                        headerSection.style.display = 'none';
+                    }
+                } else {
+                    nameLabel.textContent = message.mode === 'comment' ? 'コメント' : '変数名';
+                    typeSection.style.display = 'block';
+                    headerSection.style.display = 'none';
+                }
+
+                document.getElementById('var-name').textContent = message.word;
+                document.getElementById('var-type').textContent = message.typeInfo;
+                document.getElementById('var-pos').textContent = `Line ${message.line}, Col ${message.character}`;
 
                 const defSection = document.getElementById('definition-section');
                 if (message.definition) {
