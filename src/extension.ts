@@ -134,7 +134,6 @@ class ProgrammingSupportViewProvider implements vscode.WebviewViewProvider {
 
         let word = 'なし';
         let typeInfo = '情報なし';
-        let definition: WordDefinition | null = null;
 
         const commentInfo = this._getCommentInfo(document, position);
         if (commentInfo.isComment) {
@@ -190,23 +189,7 @@ class ProgrammingSupportViewProvider implements vscode.WebviewViewProvider {
         console.log('[ProgrammingSupport] typeInfo:', JSON.stringify(typeInfo));
 
         // 型キーワード自体を選択した場合（例: char[]）は typeInfo 側を優先して辞書検索する
-        const isTypeKeyword = ProgrammingSupportViewProvider.BASE_TYPE_KEYWORDS.has(word);
-        if (!isTypeKeyword && this._definitions[word]) {
-            definition = this._definitions[word];
-            console.log('[ProgrammingSupport] definition found by word:', definition);
-        } else if (typeInfo !== '情報なし') {
-            const baseType = this._normalizeTypeForLookup(typeInfo);
-
-            console.log('[ProgrammingSupport] normalized baseType for search:', JSON.stringify(baseType));
-
-            if (this._definitions[baseType]) {
-                definition = this._definitions[baseType];
-                console.log('[ProgrammingSupport] definition found by type:', definition);
-            }
-        } else if (this._definitions[word]) {
-            definition = this._definitions[word];
-            console.log('[ProgrammingSupport] definition found by word:', definition);
-        }
+        const definition = this._lookupDefinition(word, typeInfo);
 
         if (!definition) {
             console.log('[ProgrammingSupport] no definition for word/type:', word, typeInfo);
@@ -232,13 +215,17 @@ class ProgrammingSupportViewProvider implements vscode.WebviewViewProvider {
             // カーソルがある行、またはその前後1行以内のエラーを対象にする
             if (Math.abs(diag.range.start.line - position.line) <= 1) {
                 const msg = diag.message;
+                const lowerMsg = msg.toLowerCase();
                 if (
-                    msg.includes("expected ';'") ||
-                    msg.includes("expected a ';'") ||
+                    lowerMsg.includes("expected ';'") ||
+                    lowerMsg.includes("expected a ';'") ||
+                    lowerMsg.includes("missing ';'") ||
                     msg.includes("';' が必要です")
                 ) {
                     const errorLine = diag.range.start.line + 1;
-                    const errorLineText = document.lineAt(diag.range.start.line).text.split('//')[0].trim();
+                    const errorLineText = this._stripLineCommentsAndStrings(
+                        document.lineAt(diag.range.start.line).text
+                    ).trim();
                     if (errorLineText.endsWith(':')) {
                         return `${errorLine}行目の末尾がコロン（:）になっています。セミコロン（;）の間違いではありませんか？`;
                     }
@@ -271,58 +258,171 @@ class ProgrammingSupportViewProvider implements vscode.WebviewViewProvider {
     }
 
     private _checkLineSemicolonError(lineText: string, document: vscode.TextDocument, lineNumber: number): 'missing' | 'colon' | null {
-        // 行末コメントを除去してトリム
-        const withoutInlineComment = lineText.split('//')[0].trim();
+        // コメントと文字列・文字リテラル内容を除去してトリム
+        const codeText = this._stripLineCommentsAndStrings(lineText).trim();
 
-        if (!withoutInlineComment) {
+        if (!codeText) {
             return null; // 空行やコメントのみの行はスキップ
         }
 
         // ブロックコメント内ならスキップ
-        if (this._isInsideBlockComment(document, new vscode.Position(lineNumber, withoutInlineComment.length))) {
+        const firstNonSpace = Math.max(0, lineText.search(/\S/));
+        if (this._isInsideBlockComment(document, new vscode.Position(lineNumber, firstNonSpace))) {
             return null;
         }
 
         // プリプロセッサ指令 (#include, #define など) はセミコロン不要
-        if (withoutInlineComment.startsWith('#')) {
+        if (codeText.startsWith('#')) {
             return null;
         }
 
-        // すでにセミコロン、波括弧、カンマ、行継続バックスラッシュで終わっている場合はOK
-        if (/[;{},\\]$/.test(withoutInlineComment)) {
+        // すでにセミコロン、開き波括弧、カンマ、行継続バックスラッシュで終わっている場合はOK
+        if (/[;{,\\]$/.test(codeText)) {
             return null;
+        }
+
+        // 閉じ波括弧 '}' で終わる行のうち、struct/enum/union定義や初期化子の末尾はセミコロンが必要
+        if (codeText.endsWith('}')) {
+            return this._isClosingBraceRequiringSemicolon(document, lineNumber, codeText) ? 'missing' : null;
         }
 
         // case文、default文、ラベル宣言（識別子:）はコロンで終わるのが正常構文なので除外
-        if (/^(case\s+[^:]+|default|[A-Za-z_]\w*)\s*:$/.test(withoutInlineComment)) {
+        if (/^(case\s+[^:]+|default|[A-Za-z_]\w*)\s*:$/.test(codeText)) {
             return null;
         }
 
+        // do { ... } while (...) の末尾はセミコロン必須のため除外しない
+        const isDoWhile = this._isDoWhileClosing(document, lineNumber, codeText);
+        if (isDoWhile) {
+            return codeText.endsWith(':') ? 'colon' : 'missing';
+        }
+
         // if, for, while, switch, else などの制御構文は除外
-        if (/^(if|for|while|switch)\s*\(.*\)$/.test(withoutInlineComment) || /^else\b/.test(withoutInlineComment)) {
+        if (/^(if|for|while|switch)\s*\(.*\)$/.test(codeText) || /^else\b/.test(codeText)) {
+            return null;
+        }
+
+        // 複数行にまたがる式・関数呼び出しの途中行は除外（ただしインクリメント/デクリメントの ++ / -- は除外しない）
+        if (this._isMultilineContinuation(document, lineNumber, codeText)) {
             return null;
         }
 
         // 次の行が '{' で始まっていれば関数定義や制御構文とみなす
         if (lineNumber + 1 < document.lineCount) {
-            const nextLine = document.lineAt(lineNumber + 1).text.trim();
+            const nextLine = this._stripLineCommentsAndStrings(document.lineAt(lineNumber + 1).text).trim();
             if (nextLine.startsWith('{')) {
                 return null;
             }
         }
 
-        // 代入文、関数呼び出し、return、break、変数宣言っぽい行であれば判定
-        const statementPattern = /^(\b(return|break|continue)\b|.*\b(printf|scanf)\s*\(|.*=.*|\b(int|char|float|double|long|short|unsigned|signed|bool|_Bool)\b\s+\w+)/;
-        if (!statementPattern.test(withoutInlineComment)) {
+        // 代入文、一般的な関数呼び出し、インクリメント/デクリメント、return/break/continue、変数宣言っぽい行を判定
+        const statementPattern =
+            /^(\b(return|break|continue)\b|.*\b[A-Za-z_]\w*\s*\(|.*=.*|.*\b[A-Za-z_]\w*\s*(\+\+|--)|.*(\+\+|--)\s*[A-Za-z_]\w*\b|\b(int|char|float|double|long|short|unsigned|signed|bool|_Bool|void|struct|enum|union)\b\s+\w+)/;
+        if (!statementPattern.test(codeText)) {
             return null;
         }
 
         // 末尾がコロン（:）で終わっている場合は「セミコロンの代わりにコロンが入力されている」ミス
-        if (withoutInlineComment.endsWith(':')) {
+        if (codeText.endsWith(':')) {
             return 'colon';
         }
 
         return 'missing';
+    }
+
+    private _isDoWhileClosing(document: vscode.TextDocument, lineNumber: number, codeText: string): boolean {
+        if (/^\}\s*while\s*\(.*\)\s*:?$/.test(codeText)) {
+            return true;
+        }
+        if (!/^while\s*\(.*\)\s*:?$/.test(codeText)) {
+            return false;
+        }
+        // 直前の非空行が '}' で終わっていれば do { ... } while (...) の閉じとみなす
+        for (let i = lineNumber - 1; i >= 0; i--) {
+            const prev = this._stripLineCommentsAndStrings(document.lineAt(i).text).trim();
+            if (!prev) {
+                continue;
+            }
+            return prev.endsWith('}');
+        }
+        return false;
+    }
+
+    private _isClosingBraceRequiringSemicolon(
+        document: vscode.TextDocument,
+        lineNumber: number,
+        codeText: string
+    ): boolean {
+        // 単一行の struct/enum/union 定義や配列初期化子
+        if (/^(?:typedef\s+)?(?:struct|enum|union)\b/.test(codeText) || /=.*\{.*\}$/.test(codeText)) {
+            return true;
+        }
+
+        // 複数行の場合、対応する '{' を遡ってヘッダを確認する
+        let depth = 0;
+        for (let i = lineNumber; i >= 0; i--) {
+            const line = this._stripLineCommentsAndStrings(document.lineAt(i).text);
+            for (let j = line.length - 1; j >= 0; j--) {
+                if (line[j] === '}') {
+                    depth++;
+                } else if (line[j] === '{') {
+                    depth--;
+                    if (depth === 0) {
+                        const beforeBrace = line.slice(0, j).trim();
+                        if (beforeBrace) {
+                            return /^(?:typedef\s+)?(?:struct|enum|union)\b/.test(beforeBrace) || beforeBrace.endsWith('=');
+                        }
+                        // '{' が行頭にある場合は直前の非空行を確認
+                        for (let k = i - 1; k >= 0; k--) {
+                            const prev = this._stripLineCommentsAndStrings(document.lineAt(k).text).trim();
+                            if (prev) {
+                                return /^(?:typedef\s+)?(?:struct|enum|union)\b/.test(prev) || prev.endsWith('=');
+                            }
+                        }
+                        return false;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    private _isMultilineContinuation(document: vscode.TextDocument, lineNumber: number, codeText: string): boolean {
+        // 開き括弧や二項演算子等で終わっている行（++ / -- は除外）
+        if (/[(\[=*/%&|^<>?]$/.test(codeText)) {
+            return true;
+        }
+        if ((codeText.endsWith('+') && !codeText.endsWith('++')) ||
+            (codeText.endsWith('-') && !codeText.endsWith('--'))) {
+            return true;
+        }
+
+        // 行内で括弧が閉じていない場合
+        let parenDepth = 0;
+        for (const ch of codeText) {
+            if (ch === '(') {
+                parenDepth++;
+            } else if (ch === ')' && parenDepth > 0) {
+                parenDepth--;
+            }
+        }
+        if (parenDepth > 0) {
+            return true;
+        }
+
+        // 次の非空行が閉じ括弧や二項演算子で始まる場合は継続中とみなす
+        for (let i = lineNumber + 1; i < document.lineCount; i++) {
+            const next = this._stripLineCommentsAndStrings(document.lineAt(i).text).trim();
+            if (!next) {
+                continue;
+            }
+            if (/^[)\]]|^(&&|\|\||[+\-*/%&|^<>=?])/.test(next) && !/^(?:\+\+|--)/.test(next)) {
+                return true;
+            }
+            break;
+        }
+
+        return false;
     }
 
     private _getCommentInfo(
@@ -716,13 +816,80 @@ class ProgrammingSupportViewProvider implements vscode.WebviewViewProvider {
 
         const tokens = base
             .split(/\s+/)
-            .filter(t => t.length > 0 && !ProgrammingSupportViewProvider.QUALIFIERS.has(t));
-        const cleaned = tokens.join(' ');
+            .filter(t => t.length > 0 && !ProgrammingSupportViewProvider.QUALIFIERS.has(t))
+            .map(t => (t === '_Bool' ? 'bool' : t));
+        const cleaned = this._normalizePointerSpacing(tokens.join(' '));
 
         if (isArray) {
-            return cleaned === 'char' ? 'char[]' : `${cleaned}[]`;
+            return `${cleaned}[]`;
         }
         return cleaned;
+    }
+
+    private _lookupDefinition(word: string, typeInfo: string): WordDefinition | null {
+        const isTypeKeyword = ProgrammingSupportViewProvider.BASE_TYPE_KEYWORDS.has(word);
+        if (!isTypeKeyword && this._definitions[word]) {
+            return this._definitions[word];
+        }
+
+        if (typeInfo !== '情報なし') {
+            const normalized = this._normalizeTypeForLookup(typeInfo);
+            console.log('[ProgrammingSupport] normalized baseType for search:', JSON.stringify(normalized));
+
+            const candidates = this._buildLookupCandidates(normalized);
+            for (const key of candidates) {
+                if (this._definitions[key]) {
+                    console.log('[ProgrammingSupport] definition found by key:', key);
+                    return this._definitions[key];
+                }
+            }
+        }
+
+        if (this._definitions[word]) {
+            return this._definitions[word];
+        }
+
+        return null;
+    }
+
+    private _buildLookupCandidates(normalizedType: string): string[] {
+        const candidates: string[] = [normalizedType];
+        const isArray = normalizedType.endsWith('[]');
+        const withoutArray = isArray ? normalizedType.slice(0, -2).trim() : normalizedType;
+
+        // 符号修飾子 (unsigned / signed) を除いた基底型でフォールバック（例: unsigned int -> int）
+        const withoutSign = withoutArray
+            .split(/\s+/)
+            .filter(t => t !== 'unsigned' && t !== 'signed')
+            .join(' ');
+        if (withoutSign && withoutSign !== withoutArray) {
+            candidates.push(isArray ? `${withoutSign}[]` : withoutSign);
+        }
+
+        // 複合整数・浮動小数点型のフォールバック（例: long long int -> long long -> long, short int -> short）
+        const baseForSimplify = withoutSign || withoutArray;
+        if (baseForSimplify.endsWith(' int') && baseForSimplify !== 'int') {
+            const strippedInt = baseForSimplify.slice(0, -4).trim();
+            candidates.push(isArray ? `${strippedInt}[]` : strippedInt);
+        }
+        if (baseForSimplify === 'long long' || baseForSimplify === 'long long int') {
+            candidates.push(isArray ? 'long[]' : 'long');
+        } else if (baseForSimplify === 'long double') {
+            candidates.push(isArray ? 'double[]' : 'double');
+        }
+
+        // ポインタ型・配列型の汎用フォールバック
+        if (normalizedType.endsWith('*') || normalizedType.includes('(*)')) {
+            candidates.push('ポインタ');
+        }
+        if (isArray) {
+            candidates.push('配列');
+            if (withoutSign) {
+                candidates.push(withoutSign);
+            }
+        }
+
+        return candidates;
     }
 
     private _findLocalDeclarationType(
