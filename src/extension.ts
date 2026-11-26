@@ -25,6 +25,14 @@ export function activate(context: vscode.ExtensionContext) {
         })
     );
 
+    context.subscriptions.push(
+        vscode.window.onDidChangeActiveTextEditor(async (editor) => {
+            if (editor) {
+                await provider.updateVariableInfo(editor);
+            }
+        })
+    );
+
     // エラー（Diagnostics）が更新されたときもパネルを更新する
     context.subscriptions.push(
         vscode.languages.onDidChangeDiagnostics(async () => {
@@ -49,6 +57,12 @@ class ProgrammingSupportViewProvider implements vscode.WebviewViewProvider {
     // 辞書検索時に除去する型修飾子・記憶クラス指定子
     private static readonly QUALIFIERS = new Set([
         'const', 'volatile', 'static', 'extern', 'register', 'restrict', 'inline'
+    ]);
+
+    // ローカル宣言フォールバック時に型名として誤認しないための制御・予約キーワード
+    private static readonly NON_TYPE_KEYWORDS = new Set([
+        'return', 'if', 'else', 'while', 'for', 'switch', 'case', 'default',
+        'break', 'continue', 'goto', 'sizeof', 'do', 'typedef'
     ]);
 
     constructor(private readonly _extensionUri: vscode.Uri) {
@@ -83,6 +97,28 @@ class ProgrammingSupportViewProvider implements vscode.WebviewViewProvider {
             localResourceRoots: [this._extensionUri]
         };
         webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
+
+        webviewView.webview.onDidReceiveMessage(async (message) => {
+            if (message?.type === 'ready' && vscode.window.activeTextEditor) {
+                await this.updateVariableInfo(vscode.window.activeTextEditor);
+            }
+        });
+
+        webviewView.onDidChangeVisibility(async () => {
+            if (webviewView.visible && vscode.window.activeTextEditor) {
+                await this.updateVariableInfo(vscode.window.activeTextEditor);
+            }
+        });
+
+        webviewView.onDidDispose(() => {
+            if (this._view === webviewView) {
+                this._view = undefined;
+            }
+        });
+
+        if (vscode.window.activeTextEditor) {
+            void this.updateVariableInfo(vscode.window.activeTextEditor);
+        }
     }
 
     public async updateVariableInfo(editor: vscode.TextEditor) {
@@ -100,27 +136,17 @@ class ProgrammingSupportViewProvider implements vscode.WebviewViewProvider {
         let typeInfo = '情報なし';
         let definition: WordDefinition | null = null;
 
-        if (this._isComment(lineText, position.character, document, position)) {
-            const trimmed = lineText.trim();
-            const cleaned = trimmed
-                .replace(/^\/\/\s*/, '')
-                .replace(/^\/\*\s*/, '')
-                .replace(/^\*\s*/, '')
-                .replace(/\s*\*\/$/, '');
-            word = cleaned.trim() || 'コメント内';
+        const commentInfo = this._getCommentInfo(document, position);
+        if (commentInfo.isComment) {
+            word = commentInfo.text || 'コメント内';
             typeInfo = 'コメント';
         } else if (range) {
             word = document.getText(range);
 
             if (ProgrammingSupportViewProvider.BASE_TYPE_KEYWORDS.has(word)) {
                 // "char" や "int" などの型キーワード自体を選択した場合は、
-                // ホバー解析を経由せず単語そのものを型として扱う。
-                // （ホバー内容の解析結果が declaration 全体になったりして
-                // 　誤認識されるのを防ぐため）
-                // ただし同じ行が「型 変数名[...]」の配列宣言になっている場合は
-                // char[] のように配列であることが分かる形にする。
-                const arrayDeclPattern = new RegExp(`\\b${word}\\b\\s+\\w+\\s*\\[`);
-                typeInfo = arrayDeclPattern.test(lineText) ? `${word}[]` : word;
+                // ホバー解析を経由せず複合型（unsigned int / long long 等）や配列宣言を判定する。
+                typeInfo = this._resolveTypeKeywordAtPosition(lineText, position, word);
             } else {
                 const hoverData = await vscode.commands.executeCommand<vscode.Hover[]>(
                     'vscode.executeHoverProvider',
@@ -155,7 +181,7 @@ class ProgrammingSupportViewProvider implements vscode.WebviewViewProvider {
 
                 // ホバーから取得できない場合（言語サーバー未準備・未導入時など）の簡易フォールバック
                 if (typeInfo === '情報なし') {
-                    typeInfo = this._findLocalDeclarationType(document, position.line, word) ?? '情報なし';
+                    typeInfo = this._findLocalDeclarationType(document, position, word) ?? '情報なし';
                 }
             }
         }
@@ -299,37 +325,298 @@ class ProgrammingSupportViewProvider implements vscode.WebviewViewProvider {
         return 'missing';
     }
 
-    private _isComment(lineText: string, character: number, document: vscode.TextDocument, position: vscode.Position): boolean {
-        const trimmed = lineText.trim();
-        if (trimmed.startsWith('//') || trimmed.startsWith('/*') || trimmed.startsWith('*')) {
-            return true;
+    private _getCommentInfo(
+        document: vscode.TextDocument,
+        position: vscode.Position
+    ): { isComment: boolean; text?: string } {
+        const scan = this._scanUpToPosition(document, position);
+        if (!scan.inBlockComment && !scan.inLineComment) {
+            return { isComment: false };
         }
-        const inlineCommentIdx = lineText.indexOf('//');
-        if (inlineCommentIdx !== -1 && character >= inlineCommentIdx) {
-            return true;
+
+        const lineText = document.lineAt(position.line).text;
+        if (scan.inLineComment && scan.lineCommentStartInLine !== null) {
+            const text = lineText
+                .slice(scan.lineCommentStartInLine)
+                .replace(/^\/\/\s*/, '')
+                .trim();
+            return { isComment: true, text: text || 'コメント内' };
         }
-        if (this._isInsideBlockComment(document, position)) {
-            return true;
+
+        const start = scan.blockCommentStartInLine ?? 0;
+        let segment = lineText.slice(start);
+        if (segment.trimStart().startsWith('/*')) {
+            segment = segment.trimStart().replace(/^\/\*\s*/, '');
+        } else {
+            segment = segment.replace(/^\s*\*\s?/, '');
         }
-        return false;
+
+        const endIdx = segment.indexOf('*/');
+        if (endIdx !== -1) {
+            segment = segment.slice(0, endIdx);
+        }
+
+        return { isComment: true, text: segment.trim() || 'コメント内' };
     }
 
     private _isInsideBlockComment(document: vscode.TextDocument, position: vscode.Position): boolean {
-        let inBlock = false;
+        return this._scanUpToPosition(document, position).inBlockComment;
+    }
+
+    private _scanUpToPosition(
+        document: vscode.TextDocument,
+        position: vscode.Position
+    ): {
+        inBlockComment: boolean;
+        inLineComment: boolean;
+        blockCommentStartInLine: number | null;
+        lineCommentStartInLine: number | null;
+    } {
+        let inBlockComment = false;
+
         for (let i = 0; i <= position.line; i++) {
             const line = document.lineAt(i).text;
-            const checkTo = i === position.line ? position.character : line.length;
-            for (let j = 0; j < checkTo - 1; j++) {
-                if (!inBlock && line[j] === '/' && line[j + 1] === '*') {
-                    inBlock = true;
+            const isTargetLine = i === position.line;
+            const limit = isTargetLine ? position.character : line.length;
+
+            let inString = false;
+            let inChar = false;
+            let inLineComment = false;
+            let blockCommentStartInLine: number | null = inBlockComment ? 0 : null;
+            let lineCommentStartInLine: number | null = null;
+
+            for (let j = 0; j < line.length; j++) {
+                const ch = line[j];
+                const next = line[j + 1];
+
+                if (inBlockComment) {
+                    if (ch === '*' && next === '/') {
+                        if (isTargetLine && limit <= j + 1) {
+                            return {
+                                inBlockComment: true,
+                                inLineComment: false,
+                                blockCommentStartInLine,
+                                lineCommentStartInLine: null
+                            };
+                        }
+                        inBlockComment = false;
+                        blockCommentStartInLine = null;
+                        j++;
+                        continue;
+                    }
+                    if (isTargetLine && j >= limit) {
+                        return {
+                            inBlockComment: true,
+                            inLineComment: false,
+                            blockCommentStartInLine,
+                            lineCommentStartInLine: null
+                        };
+                    }
+                    continue;
+                }
+
+                if (inLineComment) {
+                    if (isTargetLine) {
+                        return {
+                            inBlockComment: false,
+                            inLineComment: true,
+                            blockCommentStartInLine: null,
+                            lineCommentStartInLine
+                        };
+                    }
+                    break;
+                }
+
+                if (inString) {
+                    if (ch === '\\') {
+                        j++;
+                    } else if (ch === '"') {
+                        inString = false;
+                    }
+                    if (isTargetLine && j >= limit) {
+                        return {
+                            inBlockComment: false,
+                            inLineComment: false,
+                            blockCommentStartInLine: null,
+                            lineCommentStartInLine: null
+                        };
+                    }
+                    continue;
+                }
+
+                if (inChar) {
+                    if (ch === '\\') {
+                        j++;
+                    } else if (ch === '\'') {
+                        inChar = false;
+                    }
+                    if (isTargetLine && j >= limit) {
+                        return {
+                            inBlockComment: false,
+                            inLineComment: false,
+                            blockCommentStartInLine: null,
+                            lineCommentStartInLine: null
+                        };
+                    }
+                    continue;
+                }
+
+                if (ch === '/' && next === '/') {
+                    inLineComment = true;
+                    lineCommentStartInLine = j;
+                    if (isTargetLine && limit >= j) {
+                        return {
+                            inBlockComment: false,
+                            inLineComment: true,
+                            blockCommentStartInLine: null,
+                            lineCommentStartInLine
+                        };
+                    }
+                    break;
+                }
+
+                if (ch === '/' && next === '*') {
+                    inBlockComment = true;
+                    blockCommentStartInLine = j;
+                    if (isTargetLine && limit === j) {
+                        return {
+                            inBlockComment: true,
+                            inLineComment: false,
+                            blockCommentStartInLine,
+                            lineCommentStartInLine: null
+                        };
+                    }
                     j++;
-                } else if (inBlock && line[j] === '*' && line[j + 1] === '/') {
-                    inBlock = false;
-                    j++;
+                    continue;
+                }
+
+                if (isTargetLine && j >= limit) {
+                    return {
+                        inBlockComment: false,
+                        inLineComment: false,
+                        blockCommentStartInLine: null,
+                        lineCommentStartInLine: null
+                    };
+                }
+
+                if (ch === '"') {
+                    inString = true;
+                } else if (ch === '\'') {
+                    inChar = true;
                 }
             }
+
+            if (isTargetLine) {
+                return {
+                    inBlockComment,
+                    inLineComment,
+                    blockCommentStartInLine,
+                    lineCommentStartInLine
+                };
+            }
         }
-        return inBlock;
+
+        return {
+            inBlockComment: false,
+            inLineComment: false,
+            blockCommentStartInLine: null,
+            lineCommentStartInLine: null
+        };
+    }
+
+    private _resolveTypeKeywordAtPosition(
+        lineText: string,
+        position: vscode.Position,
+        word: string
+    ): string {
+        // コメントを除去してトークン位置を抽出する（文字列・ブロックコメント開始手前まで）
+        const codePart = this._stripLineCommentsAndStrings(lineText);
+        const tokenRegex = /[A-Za-z_]\w*/g;
+        const tokens: Array<{ text: string; start: number; end: number }> = [];
+        let m: RegExpExecArray | null;
+        while ((m = tokenRegex.exec(codePart)) !== null) {
+            tokens.push({ text: m[0], start: m.index, end: m.index + m[0].length });
+        }
+
+        const currentIdx = tokens.findIndex(
+            t => position.character >= t.start && position.character <= t.end
+        );
+        if (currentIdx === -1) {
+            return word;
+        }
+
+        // 前後に隣接する基本型キーワードを連結して複合型（unsigned int / long long 等）を組み立てる
+        let left = currentIdx;
+        while (left > 0 && ProgrammingSupportViewProvider.BASE_TYPE_KEYWORDS.has(tokens[left - 1].text)) {
+            left--;
+        }
+        let right = currentIdx;
+        while (right + 1 < tokens.length && ProgrammingSupportViewProvider.BASE_TYPE_KEYWORDS.has(tokens[right + 1].text)) {
+            right++;
+        }
+
+        const compositeType = tokens.slice(left, right + 1).map(t => t.text).join(' ');
+        const afterType = codePart.slice(tokens[right].end);
+
+        // 型直後の宣言子が「識別子[...]」の場合のみ配列宣言とみなす（配列アクセス式やコメントでの誤爆を防止）
+        if (/^\s*(?:\*\s*)*[A-Za-z_]\w*\s*\[/.test(afterType)) {
+            return `${compositeType}[]`;
+        }
+        return compositeType;
+    }
+
+    private _stripLineCommentsAndStrings(lineText: string): string {
+        let out = '';
+        let inString = false;
+        let inChar = false;
+        for (let i = 0; i < lineText.length; i++) {
+            const ch = lineText[i];
+            const next = lineText[i + 1];
+            if (inString) {
+                out += ' ';
+                if (ch === '\\') {
+                    out += ' ';
+                    i++;
+                } else if (ch === '"') {
+                    inString = false;
+                }
+                continue;
+            }
+            if (inChar) {
+                out += ' ';
+                if (ch === '\\') {
+                    out += ' ';
+                    i++;
+                } else if (ch === '\'') {
+                    inChar = false;
+                }
+                continue;
+            }
+            if (ch === '/' && next === '/') {
+                break;
+            }
+            if (ch === '/' && next === '*') {
+                const closeIdx = lineText.indexOf('*/', i + 2);
+                if (closeIdx === -1) {
+                    break;
+                }
+                out += ' '.repeat(closeIdx + 2 - i);
+                i = closeIdx + 1;
+                continue;
+            }
+            if (ch === '"') {
+                inString = true;
+                out += ' ';
+                continue;
+            }
+            if (ch === '\'') {
+                inChar = true;
+                out += ' ';
+                continue;
+            }
+            out += ch;
+        }
+        return out;
     }
 
     private _parseTypeInfo(contents: string, word: string): string | undefined {
@@ -347,7 +634,14 @@ class ProgrammingSupportViewProvider implements vscode.WebviewViewProvider {
             blocks.push(normalized);
         }
 
-        const funcCallRegex = new RegExp(`\\b${escapedWord}\\s*\\(`);
+        // 関数ポインタ宣言: 例 `int (*fp)(int, int)`
+        const funcPtrRegex = new RegExp(
+            `^(.+?)\\(\\s*\\*\\s*\\b${escapedWord}\\b(?:\\s*\\[[^\\]]*\\])*\\s*\\)\\s*\\(([^)]*)\\)`
+        );
+        // 関数シグネチャ: 先頭が型・修飾子（または関数名のみ）で `word(...)` の形式
+        const funcSigRegex = new RegExp(
+            `^(?:(?:[A-Za-z_][\\w\\s\\*]*?)\\s+)?\\b${escapedWord}\\s*\\([^)]*\\)`
+        );
         const declPattern = new RegExp(
             `^(.+?)\\s*(\\**)\\s*\\b${escapedWord}\\b\\s*(\\[[^\\]]*\\](?:\\s*\\[[^\\]]*\\])*)?`
         );
@@ -359,26 +653,36 @@ class ProgrammingSupportViewProvider implements vscode.WebviewViewProvider {
                     .trim()
                     .replace(/^\((?:local variable|parameter|global variable|field|static|struct|enum)\)\s*/i, '');
 
-                if (!line || line.startsWith('//')) {
+                if (!line || line.startsWith('//') || line.startsWith('/*')) {
                     continue;
                 }
 
-                // 関数シグネチャ（例: int printf(...)）を通常の変数型として誤認しない
-                if (funcCallRegex.test(line)) {
-                    return '関数';
+                const funcPtrMatch = line.match(funcPtrRegex);
+                if (funcPtrMatch) {
+                    const retType = this._normalizePointerSpacing(funcPtrMatch[1].trim());
+                    const params = funcPtrMatch[2].trim();
+                    return `${retType} (*)(${params})`;
+                }
+
+                // 説明文中の `word(` 誤認を防ぐため、Cの関数シグネチャ構文のみを関数と判定
+                if (funcSigRegex.test(line)) {
+                    const prefix = line.slice(0, line.search(new RegExp(`\\b${escapedWord}\\s*\\(`))).trim();
+                    const looksLikeDeclaration = !prefix || /^[A-Za-z_][\w\s\*]*$/.test(prefix);
+                    if (looksLikeDeclaration) {
+                        return '関数';
+                    }
                 }
 
                 const match = line.match(declPattern);
                 if (match) {
-                    let type = match[1].trim();
+                    let type = this._normalizePointerSpacing(match[1].trim());
                     const stars = match[2] ?? '';
                     const brackets = match[3] ?? '';
                     if (stars) {
                         type += stars;
                     }
                     if (brackets) {
-                        // 配列として宣言されている場合は [] を付与して char と char[] を区別する
-                        type += '[]';
+                        type += this._normalizeBrackets(brackets);
                     }
                     if (type) {
                         return type;
@@ -394,6 +698,15 @@ class ProgrammingSupportViewProvider implements vscode.WebviewViewProvider {
         }
 
         return undefined;
+    }
+
+    private _normalizePointerSpacing(typeText: string): string {
+        return typeText.replace(/\s*(\*+)\s*/g, '$1').trim();
+    }
+
+    private _normalizeBrackets(bracketsText: string): string {
+        const dims = bracketsText.match(/\[[^\]]*\]/g);
+        return dims ? dims.map(() => '[]').join('') : '';
     }
 
     private _normalizeTypeForLookup(typeInfo: string): string {
@@ -414,30 +727,300 @@ class ProgrammingSupportViewProvider implements vscode.WebviewViewProvider {
 
     private _findLocalDeclarationType(
         document: vscode.TextDocument,
-        currentLine: number,
+        position: vscode.Position,
         word: string
     ): string | undefined {
+        const cleanLines = this._stripCommentsAndStrings(document, position.line);
+        const candidates = this._collectVisibleStatementsAndParams(cleanLines, position.line);
+
+        for (const candidate of candidates) {
+            const found = this._extractTypeFromDeclaration(candidate, word);
+            if (found) {
+                return found;
+            }
+        }
+        return undefined;
+    }
+
+    private _stripCommentsAndStrings(document: vscode.TextDocument, maxLine: number): string[] {
+        const result: string[] = [];
+        let inBlockComment = false;
+
+        for (let i = 0; i <= maxLine; i++) {
+            const line = document.lineAt(i).text;
+            let out = '';
+            let inString = false;
+            let inChar = false;
+
+            for (let j = 0; j < line.length; j++) {
+                const ch = line[j];
+                const next = line[j + 1];
+
+                if (inBlockComment) {
+                    out += ' ';
+                    if (ch === '*' && next === '/') {
+                        out += ' ';
+                        inBlockComment = false;
+                        j++;
+                    }
+                    continue;
+                }
+                if (inString) {
+                    out += ' ';
+                    if (ch === '\\' && j + 1 < line.length) {
+                        out += ' ';
+                        j++;
+                    } else if (ch === '"') {
+                        inString = false;
+                    }
+                    continue;
+                }
+                if (inChar) {
+                    out += ' ';
+                    if (ch === '\\' && j + 1 < line.length) {
+                        out += ' ';
+                        j++;
+                    } else if (ch === '\'') {
+                        inChar = false;
+                    }
+                    continue;
+                }
+                if (ch === '/' && next === '/') {
+                    break;
+                }
+                if (ch === '/' && next === '*') {
+                    out += '  ';
+                    inBlockComment = true;
+                    j++;
+                    continue;
+                }
+                if (ch === '"') {
+                    inString = true;
+                    out += ' ';
+                    continue;
+                }
+                if (ch === '\'') {
+                    inChar = true;
+                    out += ' ';
+                    continue;
+                }
+                out += ch;
+            }
+            result.push(out);
+        }
+
+        return result;
+    }
+
+    private _collectVisibleStatementsAndParams(cleanLines: string[], currentLine: number): string[] {
+        // カーソル位置から先頭へ向かって {} の深さを追跡し、
+        // 兄弟ブロックをスキップしながら現在のスコープ・親スコープ・関数仮引数を収集する
+        const collected: string[] = [];
+        let braceDepth = 0;
+        let parenDepth = 0;
+        let stmtChars: string[] = [];
+        let expectParamList = false;
+        let paramChars: string[] = [];
+        let paramParenDepth = 0;
+
+        const flushStmt = () => {
+            const stmt = stmtChars.reverse().join('').trim();
+            stmtChars = [];
+            if (stmt) {
+                collected.push(stmt);
+            }
+        };
+
+        for (let lineIdx = currentLine; lineIdx >= 0; lineIdx--) {
+            const line = cleanLines[lineIdx];
+            for (let charIdx = line.length - 1; charIdx >= 0; charIdx--) {
+                const ch = line[charIdx];
+
+                if (expectParamList) {
+                    if (/\s/.test(ch) && paramParenDepth === 0) {
+                        continue;
+                    }
+                    if (ch === ')' && paramParenDepth === 0) {
+                        paramParenDepth = 1;
+                        continue;
+                    }
+                    if (paramParenDepth > 0) {
+                        if (ch === ')') {
+                            paramParenDepth++;
+                        } else if (ch === '(') {
+                            paramParenDepth--;
+                            if (paramParenDepth === 0) {
+                                const paramList = paramChars.reverse().join('').trim();
+                                paramChars = [];
+                                expectParamList = false;
+                                for (const param of this._splitTopLevel(paramList, ',')) {
+                                    if (param.trim()) {
+                                        collected.push(param.trim());
+                                    }
+                                }
+                                continue;
+                            }
+                        }
+                        paramChars.push(ch);
+                        continue;
+                    }
+                    // '{' の直前が ')' でなければ仮引数リストではない
+                    expectParamList = false;
+                }
+
+                if (ch === '}') {
+                    if (braceDepth === 0) {
+                        flushStmt();
+                    }
+                    braceDepth++;
+                    continue;
+                }
+
+                if (ch === '{') {
+                    if (braceDepth > 0) {
+                        braceDepth--;
+                    } else {
+                        // 外側のスコープへ抜ける: 直前にある仮引数リスト `(...)` を検査対象にする
+                        flushStmt();
+                        expectParamList = true;
+                        paramChars = [];
+                        paramParenDepth = 0;
+                    }
+                    continue;
+                }
+
+                if (braceDepth > 0) {
+                    continue;
+                }
+
+                if (ch === ')') {
+                    parenDepth++;
+                } else if (ch === '(' && parenDepth > 0) {
+                    parenDepth--;
+                }
+
+                if (ch === ';' && parenDepth === 0) {
+                    flushStmt();
+                    continue;
+                }
+
+                stmtChars.push(ch);
+            }
+            if (braceDepth === 0 && !expectParamList) {
+                stmtChars.push(' ');
+            } else if (expectParamList && paramParenDepth > 0) {
+                paramChars.push(' ');
+            }
+        }
+
+        flushStmt();
+        return collected;
+    }
+
+    private _extractTypeFromDeclaration(declText: string, word: string): string | undefined {
         const escapedWord = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const declRegex = new RegExp(
-            `^\\s*(?:(?:const|static|unsigned|signed|long|short)\\s+)*` +
-            `(char|int|float|double|long|short|void|bool|_Bool)\\b\\s*(\\**)\\s*\\b${escapedWord}\\b\\s*(\\[[^\\]]*\\])?`
+        if (!new RegExp(`\\b${escapedWord}\\b`).test(declText)) {
+            return undefined;
+        }
+
+        // プリプロセッサ行は除外
+        const trimmed = declText.trim();
+        if (!trimmed || trimmed.startsWith('#')) {
+            return undefined;
+        }
+
+        // 先頭の型指定子（修飾子・struct/enum/union・複合型・typedef名）を抽出
+        const typeHeadRegex = new RegExp(
+            `^((?:(?:const|volatile|static|extern|register|restrict|inline)\\s+)*` +
+            `(?:(?:struct|enum|union)\\s+[A-Za-z_]\\w*` +
+            `|(?:(?:unsigned|signed|long|short)\\s+)*(?:char|int|float|double|long|short|void|bool|_Bool)` +
+            `|(?:unsigned|signed|long|short)` +
+            `|[A-Za-z_]\\w*))` +
+            `(?:\\s+|(?=\\*))([\\s\\S]+)$`
         );
 
-        for (let i = currentLine; i >= 0; i--) {
-            const line = document.lineAt(i).text.split('//')[0];
-            const match = line.match(declRegex);
-            if (match) {
-                let type = match[1];
-                if (match[2]) {
-                    type += match[2];
+        const headMatch = trimmed.match(typeHeadRegex);
+        if (!headMatch) {
+            return undefined;
+        }
+
+        const rawType = headMatch[1].replace(/\s+/g, ' ').trim();
+        if (ProgrammingSupportViewProvider.NON_TYPE_KEYWORDS.has(rawType)) {
+            return undefined;
+        }
+
+        const declaratorsPart = headMatch[2].trim();
+        const declarators = this._splitTopLevel(declaratorsPart, ',');
+
+        const funcPtrDeclRegex = new RegExp(
+            `^\\(\\s*\\*\\s*\\b${escapedWord}\\b(?:\\s*\\[[^\\]]*\\])*\\s*\\)\\s*\\(([^)]*)\\)$`
+        );
+        const normalDeclRegex = new RegExp(
+            `^(\\**)\\s*\\b${escapedWord}\\b\\s*(\\[[^\\]]*\\](?:\\s*\\[[^\\]]*\\])*)?$`
+        );
+
+        for (const decl of declarators) {
+            const beforeInit = this._splitTopLevel(decl, '=')[0].trim();
+            if (!beforeInit) {
+                continue;
+            }
+
+            const funcPtrMatch = beforeInit.match(funcPtrDeclRegex);
+            if (funcPtrMatch) {
+                return `${rawType} (*)(${funcPtrMatch[1].trim()})`;
+            }
+
+            const normalMatch = beforeInit.match(normalDeclRegex);
+            if (normalMatch) {
+                let type = rawType;
+                if (normalMatch[1]) {
+                    type += normalMatch[1];
                 }
-                if (match[3]) {
-                    type += '[]';
+                if (normalMatch[2]) {
+                    type += this._normalizeBrackets(normalMatch[2]);
                 }
                 return type;
             }
         }
+
         return undefined;
+    }
+
+    private _splitTopLevel(text: string, delimiter: ',' | '='): string[] {
+        const parts: string[] = [];
+        let current = '';
+        let parenDepth = 0;
+        let bracketDepth = 0;
+        let braceDepth = 0;
+
+        for (let i = 0; i < text.length; i++) {
+            const ch = text[i];
+            if (ch === '(') {
+                parenDepth++;
+            } else if (ch === ')' && parenDepth > 0) {
+                parenDepth--;
+            } else if (ch === '[') {
+                bracketDepth++;
+            } else if (ch === ']' && bracketDepth > 0) {
+                bracketDepth--;
+            } else if (ch === '{') {
+                braceDepth++;
+            } else if (ch === '}' && braceDepth > 0) {
+                braceDepth--;
+            } else if (ch === delimiter && parenDepth === 0 && bracketDepth === 0 && braceDepth === 0) {
+                parts.push(current);
+                current = '';
+                if (delimiter === '=') {
+                    // '=' は最初のトップレベル出現だけ分割すればよい
+                    parts.push(text.slice(i + 1));
+                    return parts;
+                }
+                continue;
+            }
+            current += ch;
+        }
+        parts.push(current);
+        return parts;
     }
 
     private _getHtmlForWebview(webview: vscode.Webview): string {
